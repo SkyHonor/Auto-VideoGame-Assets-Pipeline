@@ -1,0 +1,10 @@
+run_name,baseline_id,family,lora_stack,llm_expansion,style_strength,kid_mean,kid_std,clip_score,lpips_diversity,n_generated,run_id,warning
+eval_baseline_1_turbo_only_cfg2.0_steps12,baseline_1,character,turbo_only,False,0.0,0.0731954574584961,0.00637444481253624,0.30418507993221283,0.6914345726894973,100.0,d60f95d277294fa9942cc9257b7290f6,
+eval_baseline_1_turbo_only_cfg2.0_steps12,baseline_1,character,turbo_only,False,0.0,,,,,,3ebe02734371459cbb1688615df60742,
+eval_baseline_1_turbo_only_cfg2.0_steps12,baseline_1,character,turbo_only,False,0.0,,,,,,a14c20b31344474c87f1da2c8bb8ef94,
+eval_baseline_1_turbo_only_cfg2.0_steps12,baseline_1,character,turbo_only,False,0.0,,,,,,1e35f0360a854abe85fa69770dab3f9d,
+eval_baseline_1_turbo_only_cfg2.0_steps12,baseline_1,character,turbo_only,False,0.0,,,,,,92b54a0c37864f839879e162332b6be2,
+eval_baseline_2_charLoRA_cfg2.0_w0.85,baseline_2,character,turbo+character,False,0.85,0.04283178225159645,0.004295665770769119,0.299316004216671,0.6917488893971371,100.0,77c7508c567244dfa162bdb70c6feec9,
+eval_baseline_3_propsLoRA_cfg2.0_w0.85,baseline_3,props,turbo+props,False,0.85,0.03807694464921951,0.004435711540281773,0.31964649304747583,0.6983027983849971,100.0,90f448f0279844c4a7ac283c7a6afab6,
+eval_baseline_4_charLoRA_llmExpand,baseline_4,character,turbo+character,True,0.85,0.05679848790168762,0.0056016333401203156,0.2922116422653198,0.6513944377551726,100.0,e62d0d92a4544009a9eaafa3649c595a,
+eval_baseline_5_propsLoRA_llmExpand,baseline_5,props,turbo+props,True,0.85,0.0364668145775795,0.0048491982743144035,0.271003440618515,0.6659479963420024,100.0,677787ada13a443d820780245679e18d,

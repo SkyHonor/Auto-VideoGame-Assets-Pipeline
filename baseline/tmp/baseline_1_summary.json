@@ -1,0 +1,39 @@
+{
+  "baseline_id": "baseline_1",
+  "run_id": "d60f95d277294fa9942cc9257b7290f6",
+  "metrics": {
+    "kid_mean": 0.073195,
+    "kid_std": 0.006374,
+    "clip_score": 0.3042,
+    "lpips_diversity": 0.6914
+  },
+  "model": {
+    "model.name": "anima_base",
+    "model.family": "cosmos2_dit",
+    "model.type": "base_only",
+    "model.diffusion": "anima-base-v1.0.safetensors",
+    "model.text_encoder": "qwen_3_06b_base.safetensors",
+    "model.vae": "qwen_image_vae.safetensors",
+    "model.lora_stack": "turbo_only",
+    "model.trigger": "none"
+  },
+  "infer": {
+    "infer.baseline_id": "baseline_1",
+    "infer.sampler": "euler_ancestral",
+    "infer.scheduler": "normal",
+    "infer.steps": 12,
+    "infer.cfg": 2.0,
+    "infer.width": 512,
+    "infer.height": 512,
+    "infer.turbo_lora_name": "Anima_test/anima-turbo-lora-v0.2.safetensors",
+    "infer.turbo_strength": 0.7,
+    "infer.style_lora_name": "none",
+    "infer.style_strength": 0.0,
+    "infer.llm_expansion": false,
+    "infer.seed_policy": "idx*7919",
+    "infer.prompt_set": "char_prompts_v1",
+    "infer.n_images": 100,
+    "infer.positive_prefix": "masterpiece, best quality, score_9, score_8, score_7",
+    "infer.negative_prefix": "worst quality, low quality, artist name, watermark"
+  }
+}
