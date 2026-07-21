@@ -1,0 +1,527 @@
+import { useEffect, useRef, useState } from "react";
+import {
+  api,
+  downloadPackageZip,
+  GenParams,
+  ImageAsset,
+  Job,
+  Package,
+} from "./api";
+import { AuthedImage, Modal, Spinner, StatusBadge, Toast } from "./components";
+
+const SAMPLERS = [
+  "euler",
+  "euler_ancestral",
+  "dpmpp_2m",
+  "dpmpp_2m_sde",
+  "dpmpp_sde",
+  "ddim",
+  "uni_pc",
+];
+const SCHEDULERS = ["normal", "karras", "exponential", "sgm_uniform", "simple"];
+const WORKFLOWS = [
+  { value: "character", label: "Character  ·  @sltn" },
+  { value: "props", label: "Props / Icons  ·  @spll_icn" },
+];
+
+const DEFAULT_PARAMS: GenParams = {
+  workflow_type: "character",
+  width: 1024,
+  height: 1024,
+  steps: 30,
+  cfg: 4.5,
+  sampler_name: "dpmpp_2m",
+  scheduler: "karras",
+  denoise: 1.0,
+  seed: null,
+  style_lora_strength: 0.85,
+  negative_prompt: "low quality, blurry, watermark, text",
+};
+
+export default function Executor() {
+  const [packages, setPackages] = useState<Package[]>([]);
+  const [selected, setSelected] = useState<Package | null>(null);
+  const [images, setImages] = useState<ImageAsset[]>([]);
+  const [toast, setToast] = useState<{ m: string; k: "error" | "success" } | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [lightbox, setLightbox] = useState<ImageAsset | null>(null);
+
+  const [prompt, setPrompt] = useState("");
+  const [batch, setBatch] = useState(4);
+  const [llm, setLlm] = useState(false);
+  const [params, setParams] = useState<GenParams>(DEFAULT_PARAMS);
+  const [job, setJob] = useState<Job | null>(null);
+  const pollRef = useRef<number | null>(null);
+
+  const notify = (m: string, k: "error" | "success" = "error") => setToast({ m, k });
+  const setP = (patch: Partial<GenParams>) =>
+    setParams((prev) => ({ ...prev, ...patch }));
+
+  const loadPackages = async () => {
+    try {
+      setPackages(await api.listPackages());
+    } catch (e: any) {
+      notify(e.message);
+    }
+  };
+
+  useEffect(() => {
+    loadPackages();
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
+  const openPackage = async (p: Package) => {
+    setSelected(p);
+    try {
+      setImages(await api.listImages(p.id));
+    } catch (e: any) {
+      notify(e.message);
+    }
+  };
+
+  const refreshSelected = async () => {
+    if (!selected) return;
+    const p = await api.getPackage(selected.id);
+    setSelected(p);
+    setImages(await api.listImages(p.id));
+    setPackages((prev) => prev.map((x) => (x.id === p.id ? p : x)));
+  };
+
+  const createPackage = async (name: string, desc: string) => {
+    try {
+      const p = await api.createPackage(name, desc);
+      setShowCreate(false);
+      await loadPackages();
+      openPackage(p);
+      notify("Package created", "success");
+    } catch (e: any) {
+      notify(e.message);
+    }
+  };
+
+  const startPolling = (jobId: string) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const j = await api.getJob(jobId);
+        setJob(j);
+        if (j.status === "completed" || j.status === "failed") {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+          if (j.status === "completed") {
+            await refreshSelected();
+            notify("Generation complete", "success");
+          } else {
+            notify(j.error || "Generation failed");
+          }
+          setTimeout(() => setJob(null), 1200);
+        }
+      } catch {
+        /* keep polling on transient errors */
+      }
+    }, 1500);
+  };
+
+  const generate = async () => {
+    if (!selected) return;
+    if (!prompt.trim()) {
+      notify("Enter a prompt first");
+      return;
+    }
+    try {
+      const j = await api.generate(selected.id, {
+        prompt,
+        batch_size: batch,
+        llm_expand: llm,
+        params,
+      });
+      setJob(j);
+      startPolling(j.id);
+      setSelected({ ...selected, status: "generating" });
+    } catch (e: any) {
+      notify(e.message);
+    }
+  };
+
+  const submit = async () => {
+    if (!selected) return;
+    try {
+      const p = await api.submit(selected.id);
+      setSelected(p);
+      setPackages((prev) => prev.map((x) => (x.id === p.id ? p : x)));
+      notify("Sent to the art director for review", "success");
+    } catch (e: any) {
+      notify(e.message);
+    }
+  };
+
+  const download = async () => {
+    if (!selected) return;
+    try {
+      await downloadPackageZip(selected.id, selected.name);
+    } catch (e: any) {
+      notify(e.message);
+    }
+  };
+
+  const busyGen = job && (job.status === "pending" || job.status === "running");
+  const canSubmit =
+    selected &&
+    (selected.status === "draft" || selected.status === "rejected") &&
+    selected.image_count > 0;
+  const locked =
+    selected &&
+    (selected.status === "pending_review" || selected.status === "approved");
+
+  return (
+    <div className="workspace">
+      <aside className="sidebar">
+        <div className="sidebar-head">
+          <h3>My packages</h3>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>
+            + New
+          </button>
+        </div>
+        <div className="pkg-list">
+          {packages.length === 0 && (
+            <p className="muted">No packages yet. Create one to start generating.</p>
+          )}
+          {packages.map((p) => (
+            <button
+              key={p.id}
+              className={`pkg-item ${selected?.id === p.id ? "active" : ""}`}
+              onClick={() => openPackage(p)}
+            >
+              <div className="pkg-item-top">
+                <span className="pkg-name">{p.name}</span>
+                <StatusBadge status={p.status} />
+              </div>
+              <div className="pkg-item-sub">{p.image_count} images</div>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <section className="content">
+        {!selected ? (
+          <div className="empty-state">
+            <div className="empty-mark">◈</div>
+            <h2>Select or create a package</h2>
+            <p className="muted">
+              Packages group generated assets for review and delivery.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="content-head">
+              <div>
+                <h2>
+                  {selected.name} <StatusBadge status={selected.status} />
+                </h2>
+                {selected.description && (
+                  <p className="muted">{selected.description}</p>
+                )}
+              </div>
+              <div className="head-actions">
+                {selected.status === "approved" && (
+                  <button className="btn btn-success" onClick={download}>
+                    ⬇ Download
+                  </button>
+                )}
+                {canSubmit && (
+                  <button className="btn btn-primary" onClick={submit}>
+                    Send for review
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {selected.status === "rejected" && selected.review_comment && (
+              <div className="notice notice-reject">
+                <b>Rejected by {selected.reviewed_by}:</b> {selected.review_comment}
+              </div>
+            )}
+            {selected.status === "pending_review" && (
+              <div className="notice notice-pending">
+                Awaiting art-director review — editing is locked.
+              </div>
+            )}
+
+            {!locked && (
+              <div className="card gen-panel">
+                <div className="gen-main">
+                  <label className="field">
+                    <span>Prompt</span>
+                    <textarea
+                      rows={3}
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      placeholder="e.g. a stylized goblin warrior holding a rusty axe"
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Negative prompt</span>
+                    <textarea
+                      rows={2}
+                      value={params.negative_prompt}
+                      onChange={(e) => setP({ negative_prompt: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <div className="gen-params">
+                  <label className="field">
+                    <span>Workflow / Style LoRA</span>
+                    <select
+                      value={params.workflow_type}
+                      onChange={(e) => setP({ workflow_type: e.target.value })}
+                    >
+                      {WORKFLOWS.map((w) => (
+                        <option key={w.value} value={w.value}>
+                          {w.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="field-row">
+                    <label className="field">
+                      <span>Width</span>
+                      <input
+                        type="number"
+                        min={256}
+                        max={2048}
+                        step={64}
+                        value={params.width}
+                        onChange={(e) => setP({ width: +e.target.value })}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Height</span>
+                      <input
+                        type="number"
+                        min={256}
+                        max={2048}
+                        step={64}
+                        value={params.height}
+                        onChange={(e) => setP({ height: +e.target.value })}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="field-row">
+                    <label className="field">
+                      <span>Steps: {params.steps}</span>
+                      <input
+                        type="range"
+                        min={5}
+                        max={60}
+                        value={params.steps}
+                        onChange={(e) => setP({ steps: +e.target.value })}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>CFG: {params.cfg}</span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={12}
+                        step={0.5}
+                        value={params.cfg}
+                        onChange={(e) => setP({ cfg: +e.target.value })}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="field-row">
+                    <label className="field">
+                      <span>Sampler</span>
+                      <select
+                        value={params.sampler_name}
+                        onChange={(e) => setP({ sampler_name: e.target.value })}
+                      >
+                        {SAMPLERS.map((s) => (
+                          <option key={s}>{s}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span>Scheduler</span>
+                      <select
+                        value={params.scheduler}
+                        onChange={(e) => setP({ scheduler: e.target.value })}
+                      >
+                        {SCHEDULERS.map((s) => (
+                          <option key={s}>{s}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="field-row">
+                    <label className="field">
+                      <span>Batch size: {batch}</span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={16}
+                        value={batch}
+                        onChange={(e) => setBatch(+e.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>LoRA strength: {params.style_lora_strength}</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1.5}
+                        step={0.05}
+                        value={params.style_lora_strength}
+                        onChange={(e) =>
+                          setP({ style_lora_strength: +e.target.value })
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <div className="field-row">
+                    <label className="field">
+                      <span>Seed (blank = random)</span>
+                      <input
+                        type="number"
+                        value={params.seed ?? ""}
+                        placeholder="random"
+                        onChange={(e) =>
+                          setP({
+                            seed: e.target.value === "" ? null : +e.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="toggle">
+                      <input
+                        type="checkbox"
+                        checked={llm}
+                        onChange={(e) => setLlm(e.target.checked)}
+                      />
+                      <span>LLM prompt expansion</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="gen-actions">
+                  <button
+                    className="btn btn-primary btn-lg"
+                    onClick={generate}
+                    disabled={!!busyGen}
+                  >
+                    {busyGen
+                      ? `Generating… (${job?.status})`
+                      : `✨ Generate ${batch > 1 ? `${batch} images` : "image"}`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="gallery-head">
+              <h3>
+                Assets <span className="count">{images.length}</span>
+              </h3>
+            </div>
+            {busyGen && <Spinner label="Workers are rendering your batch…" />}
+            {images.length === 0 && !busyGen ? (
+              <p className="muted">No assets yet — generate your first batch above.</p>
+            ) : (
+              <div className="gallery">
+                {images.map((img) => (
+                  <figure
+                    key={img.id}
+                    className="tile"
+                    onClick={() => setLightbox(img)}
+                  >
+                    <AuthedImage url={img.url} className="tile-img" />
+                    <figcaption>#{img.seed}</figcaption>
+                  </figure>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      {showCreate && (
+        <CreatePackageModal
+          onClose={() => setShowCreate(false)}
+          onCreate={createPackage}
+        />
+      )}
+      {lightbox && (
+        <Modal title={lightbox.filename} onClose={() => setLightbox(null)}>
+          <div className="lightbox">
+            <AuthedImage url={lightbox.url} className="lightbox-img" />
+            <dl className="meta">
+              <dt>Prompt</dt>
+              <dd>{lightbox.prompt}</dd>
+              {lightbox.expanded_prompt && (
+                <>
+                  <dt>Expanded</dt>
+                  <dd>{lightbox.expanded_prompt}</dd>
+                </>
+              )}
+              <dt>Seed</dt>
+              <dd>{lightbox.seed}</dd>
+              <dt>Size</dt>
+              <dd>
+                {lightbox.width}×{lightbox.height}
+              </dd>
+              <dt>Workflow</dt>
+              <dd>{lightbox.workflow_type}</dd>
+            </dl>
+          </div>
+        </Modal>
+      )}
+      {toast && (
+        <Toast message={toast.m} kind={toast.k} onClose={() => setToast(null)} />
+      )}
+    </div>
+  );
+}
+
+function CreatePackageModal({
+  onClose,
+  onCreate,
+}: {
+  onClose: () => void;
+  onCreate: (name: string, desc: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [desc, setDesc] = useState("");
+  return (
+    <Modal title="New package" onClose={onClose}>
+      <div className="form">
+        <label className="field">
+          <span>Name</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+            placeholder="Goblin enemy set"
+          />
+        </label>
+        <label className="field">
+          <span>Description</span>
+          <textarea rows={3} value={desc} onChange={(e) => setDesc(e.target.value)} />
+        </label>
+        <button
+          className="btn btn-primary btn-block"
+          disabled={!name.trim()}
+          onClick={() => onCreate(name, desc)}
+        >
+          Create package
+        </button>
+      </div>
+    </Modal>
+  );
+}
