@@ -34,8 +34,9 @@ def _now():
     return datetime.now(timezone.utc)
 
 
-@celery_app.task(name="generate_images", bind=True, max_retries=0)
-def generate_images_task(self, job_id: str) -> dict:
+@celery_app.task(name="generate_images", max_retries=0)
+def generate_images_task(job_id: str) -> dict:
+
     db = _db()
     jobs, images, packages = db["jobs"], db["images"], db["packages"]
     oid = ObjectId(job_id)
