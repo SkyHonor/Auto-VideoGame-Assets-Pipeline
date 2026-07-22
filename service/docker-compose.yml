@@ -67,8 +67,10 @@ services:
     build: ./models/base-downloader
     env_file: .env
     restart: "no"
+    # Downloader sorts each component into the correct ComfyUI sub-folder
+    # (unet / text_encoders / vae / checkpoints) under this shared models root.
     volumes:
-      - ./models/checkpoints:/models/checkpoints
+      - ./models/base:/models
 
   lora-init:
     build: ./models/lora-downloader
@@ -83,8 +85,14 @@ services:
     restart: unless-stopped
     ports:
       - "8188:8188"
+    # Each model component is mounted into the ComfyUI sub-folder its loader
+    # node reads from (UNETLoader -> unet, CLIPLoader -> text_encoders,
+    # VAELoader -> vae). The downloader populates ./models/base/<type>/.
     volumes:
-      - ./models/checkpoints:/opt/ComfyUI/models/checkpoints
+      - ./models/base/unet:/opt/ComfyUI/models/unet
+      - ./models/base/text_encoders:/opt/ComfyUI/models/text_encoders
+      - ./models/base/vae:/opt/ComfyUI/models/vae
+      - ./models/base/checkpoints:/opt/ComfyUI/models/checkpoints
       - ./models/lora-store:/opt/ComfyUI/models/loras
     depends_on:
       model-init: {condition: service_completed_successfully}
