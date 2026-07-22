@@ -27,13 +27,15 @@ class GenerationParams(BaseModel):
     )
     style_lora_strength: float = Field(default=0.85, ge=0.0, le=2.0)
 
-    # Quality-anchor prefix prepended to the user prompt (Pony/score-style tags
-    # the Anima model was trained on). Kept separate from the user's creative
-    # text so it is always applied consistently.
-    positive_prefix: str = "masterpiece, best quality, score_7"
+    # Quality-anchor prefix prepended to the user prompt. Anima Base (Cosmos 2)
+    # was trained on WD-14 Booru-style tags, so we use plain quality tags here
+    # (not Pony score_* tags). Kept separate from the user's creative text so it
+    # is applied consistently. The mandatory SFW anchor is added server-side in
+    # build_workflow() and cannot be removed from the UI.
+    positive_prefix: str = "masterpiece, best quality, highly detailed"
     negative_prompt: str = (
-        "worst quality, low quality, score_1, score_2, score_3, artist name, "
-        "blurry, jpeg artifacts, lowres, censor"
+        "worst quality, low quality, blurry, jpeg artifacts, lowres, "
+        "bad anatomy, extra limbs, watermark, signature, text"
     )
 
     model_config = {"use_enum_values": True}

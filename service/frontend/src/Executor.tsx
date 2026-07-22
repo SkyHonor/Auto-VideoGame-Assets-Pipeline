@@ -36,9 +36,9 @@ const DEFAULT_PARAMS: GenParams = {
   denoise: 1.0,
   seed: null,
   style_lora_strength: 0.85,
-  positive_prefix: "masterpiece, best quality, score_7",
+  positive_prefix: "masterpiece, best quality, highly detailed",
   negative_prompt:
-    "worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, lowres, censor",
+    "worst quality, low quality, blurry, jpeg artifacts, lowres, bad anatomy, extra limbs, watermark, signature, text",
 };
 
 export default function Executor() {
@@ -106,16 +106,31 @@ export default function Executor() {
 
   const deleteAsset = async (img: ImageAsset) => {
     if (!confirm("Delete this asset from the package?")) return;
-    setImgBusy(true);
+    // Optimistic UI: drop it from the grid, counters and cover immediately.
+    const prevImages = images;
+    const prevSelected = selected;
+    const prevPackages = packages;
+    setLightbox(null);
+    setImages((prev) => prev.filter((x) => x.id !== img.id));
+    setSelected((prev) =>
+      prev ? { ...prev, image_count: Math.max(0, prev.image_count - 1) } : prev
+    );
+    setPackages((prev) =>
+      prev.map((p) =>
+        p.id === img.package_id
+          ? { ...p, image_count: Math.max(0, p.image_count - 1) }
+          : p
+      )
+    );
     try {
       await api.deleteImage(img.id);
-      setLightbox(null);
-      await refreshSelected();
       notify("Asset deleted", "success");
     } catch (e: any) {
+      // Roll back on failure.
+      setImages(prevImages);
+      setSelected(prevSelected);
+      setPackages(prevPackages);
       notify(e.message);
-    } finally {
-      setImgBusy(false);
     }
   };
 
@@ -138,14 +153,21 @@ export default function Executor() {
   const deletePackage = async () => {
     if (!selected) return;
     if (!confirm(`Delete package "${selected.name}" and all its assets?`)) return;
+    // Optimistic UI: remove it from the sidebar and clear the view at once.
+    const prevPackages = packages;
+    const prevSelected = selected;
+    const id = selected.id;
+    setPackages((prev) => prev.filter((p) => p.id !== id));
+    setSelected(null);
+    setImages([]);
+    setReviews([]);
     try {
-      await api.deletePackage(selected.id);
-      setSelected(null);
-      setImages([]);
-      setReviews([]);
-      await loadPackages();
+      await api.deletePackage(id);
       notify("Package deleted", "success");
     } catch (e: any) {
+      // Roll back on failure.
+      setPackages(prevPackages);
+      setSelected(prevSelected);
       notify(e.message);
     }
   };

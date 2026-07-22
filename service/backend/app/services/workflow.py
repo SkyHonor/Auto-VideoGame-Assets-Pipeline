@@ -25,7 +25,35 @@ NODE_STYLE_LORA = "72"
 TRIGGERS = {"character": "@sltn", "props": "@spll_icn"}
 TEMPLATES = {"character": "character.json", "props": "props.json"}
 
+# --- Mandatory SFW guard (Anima Base / Cosmos 2, WD-14 Booru rating tags) ---
+# These are always injected server-side and CANNOT be removed from the UI.
+# `rating:safe` / `sfw` are the exact tags WD-14 uses to label the dataset, so
+# Anima responds to them directly and biases sampling toward SFW output. The
+# negative side hard-blocks explicit/questionable ratings and NSFW anatomy.
+SFW_POSITIVE_ANCHOR = "rating:safe, sfw"
+SFW_NEGATIVE_ANCHOR = (
+    "rating:explicit, rating:questionable, nsfw, nude, nudity, naked, "
+    "nipples, pussy, penis, sex, cum, cameltoe, cleavage, underwear, panties, "
+    "lingerie, bikini, revealing clothes, suggestive, sexually suggestive, "
+    "erotic, gore, blood"
+)
+
+
+def _merge_tags(*parts: str) -> str:
+    """Join comma-separated tag strings, dropping blanks and case-insensitive dups."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        for tag in (part or "").split(","):
+            t = tag.strip()
+            if t and t.lower() not in seen:
+                seen.add(t.lower())
+                out.append(t)
+    return ", ".join(out)
+
+
 _cache: dict[str, dict[str, Any]] = {}
+
 
 
 def _load_template(workflow_type: str) -> dict[str, Any]:
@@ -55,8 +83,13 @@ def build_workflow(
     if trigger and trigger not in final_prompt:
         final_prompt = f"{final_prompt}, {trigger}"
 
+    # Enforce the mandatory SFW guard on top of whatever the user supplied.
+    # These anchors are always present and cannot be stripped from the UI.
+    final_prompt = _merge_tags(SFW_POSITIVE_ANCHOR, final_prompt)
+    final_negative = _merge_tags(SFW_NEGATIVE_ANCHOR, params.negative_prompt)
+
     wf[NODE_POSITIVE]["inputs"]["text"] = final_prompt
-    wf[NODE_NEGATIVE]["inputs"]["text"] = params.negative_prompt
+    wf[NODE_NEGATIVE]["inputs"]["text"] = final_negative
 
     ks = wf[NODE_KSAMPLER]["inputs"]
     ks["seed"] = int(seed)

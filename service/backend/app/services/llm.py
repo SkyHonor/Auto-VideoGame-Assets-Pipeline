@@ -12,16 +12,23 @@ import httpx
 
 from ..core.config import settings
 
+# Every expansion must stay strictly safe-for-work so the LLM never introduces
+# NSFW/suggestive tags (the diffusion side also has a hard SFW guard).
+SFW_RULE = (
+    "The output MUST be strictly safe-for-work: absolutely no nudity, "
+    "sexual, suggestive, fetish, or gore content."
+)
 CHARACTER_INSTRUCTION = (
     "You expand Stable Diffusion prompts for a 2.5D anime game-asset model. "
     "Keep the Booru comma-separated TAG style (no prose sentences). Add a few "
-    "relevant appearance/composition tags. Return ONLY the tags, no preamble."
+    "relevant appearance/composition tags. " + SFW_RULE + " "
+    "Return ONLY the tags, no preamble."
 )
 PROPS_INSTRUCTION = (
     "You expand Stable Diffusion prompts for glowing magical game props/VFX. "
     "Produce one rich English sentence describing shapes, glow, volumetric "
-    "lighting and misty gradients. Do NOT mention art style. Return ONLY the "
-    "description, no preamble."
+    "lighting and misty gradients. Do NOT mention art style. " + SFW_RULE + " "
+    "Return ONLY the description, no preamble."
 )
 
 

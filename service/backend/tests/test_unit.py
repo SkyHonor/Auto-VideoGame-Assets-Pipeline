@@ -13,7 +13,12 @@ from app.models.common import GenerationParams
 from app.models.enums import PackageStatus, ReviewDecision, WorkflowType
 from app.services import package_flow
 from app.services.mock import generate_placeholder
-from app.services.workflow import build_workflow
+from app.services.workflow import (
+    SFW_NEGATIVE_ANCHOR,
+    SFW_POSITIVE_ANCHOR,
+    build_workflow,
+)
+
 
 
 # ------------------------- Package state machine -------------------------
@@ -95,6 +100,37 @@ def test_build_workflow_props_uses_props_trigger_and_lora():
     wf = build_workflow("fire sword", params, seed=7)
     assert "@spll_icn" in wf["67"]["inputs"]["text"]
     assert "SpellIcons" in wf["72"]["inputs"]["lora_name"]
+
+
+# ------------------------- Mandatory SFW guard -------------------------
+def test_sfw_anchor_always_injected():
+    params = GenerationParams()
+    wf = build_workflow("a hero", params, seed=1)
+    positive = wf["67"]["inputs"]["text"]
+    negative = wf["65"]["inputs"]["text"]
+    for tag in SFW_POSITIVE_ANCHOR.split(","):
+        assert tag.strip() in positive
+    for tag in SFW_NEGATIVE_ANCHOR.split(","):
+        assert tag.strip() in negative
+
+
+def test_sfw_anchor_cannot_be_removed_by_user_input():
+    # Even if the user empties/overrides prompts, the SFW guard is enforced.
+    params = GenerationParams(positive_prefix="", negative_prompt="")
+    wf = build_workflow("nsfw, nude woman", params, seed=1)
+    positive = wf["67"]["inputs"]["text"]
+    negative = wf["65"]["inputs"]["text"]
+    assert "rating:safe" in positive and "sfw" in positive
+    assert "nsfw" in negative and "nude" in negative
+
+
+def test_sfw_anchor_deduplicates_tags():
+    # A user repeating a guard tag must not produce duplicates.
+    params = GenerationParams(negative_prompt="nsfw, blurry")
+    wf = build_workflow("a hero", params, seed=1)
+    negative = wf["65"]["inputs"]["text"].lower()
+    assert negative.count("nsfw") == 1
+
 
 
 # ------------------------- Mock generator -------------------------
