@@ -13,7 +13,16 @@ node_modules/
 dist/
 frontend/.vite/
 
-# Local model weights (mounted as volumes, never committed under NDA)
+# Local model weights (auto-downloaded on `docker compose up`, never committed)
 models/base-downloader/cache/
+models/checkpoints/
+models/lora-store/*.safetensors
 models/lora-store/loras/*.safetensors
 models/comfyui-data/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+
+
