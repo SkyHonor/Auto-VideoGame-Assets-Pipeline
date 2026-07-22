@@ -64,7 +64,22 @@ class GenerateRequest(BaseModel):
 
 
 
+class RegenerateRequest(BaseModel):
+    """Re-roll a single asset, optionally overriding any generation input.
+
+    Every field is optional: omitted values fall back to the original asset's
+    prompt / params / mode, so a bare POST still behaves like a plain re-roll
+    with a fresh seed.
+    """
+
+    prompt: str | None = Field(default=None, min_length=1)
+    llm_expand: bool | None = None
+    qa_check: bool | None = None
+    params: GenerationParams | None = None
+
+
 class JobOut(BaseModel):
+
     id: str
     package_id: str
     prompt: str

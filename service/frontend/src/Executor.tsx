@@ -53,6 +53,8 @@ export default function Executor() {
 
   const [rejected, setRejected] = useState<ImageAsset[]>([]);
   const [showRejected, setShowRejected] = useState(false);
+  const [regenTarget, setRegenTarget] = useState<ImageAsset | null>(null);
+
 
   const [prompt, setPrompt] = useState("");
   const [batch, setBatch] = useState(4);
@@ -171,11 +173,12 @@ export default function Executor() {
     }
   };
 
-  const regenerateAsset = async (img: ImageAsset) => {
+  const regenerateAsset = async (img: ImageAsset, override?: any) => {
     setImgBusy(true);
     try {
-      const j = await api.regenerateImage(img.id);
+      const j = await api.regenerateImage(img.id, override);
       setLightbox(null);
+      setRegenTarget(null);
       setJob(j);
       startPolling(j.id);
       setSelected((prev) => (prev ? { ...prev, status: "generating" } : prev));
@@ -186,6 +189,7 @@ export default function Executor() {
       setImgBusy(false);
     }
   };
+
 
   const deletePackage = async () => {
     if (!selected) return;
@@ -567,14 +571,15 @@ export default function Executor() {
                   </div>
 
                   <div className="field-row">
-                    <label className="toggle" title="Score every image with CLIP (prompt match) and, for batches of 4+, LPIPS (drop near-duplicates). Rejected images are kept but hidden below.">
+                    <label className="toggle" title="Automatically score each image for how well it matches the prompt and, for larger batches, drop near-duplicates. Rejected images are kept but hidden below.">
                       <input
                         type="checkbox"
                         checked={qa}
                         onChange={(e) => setQa(e.target.checked)}
                       />
-                      <span>Auto quality check (CLIP + LPIPS)</span>
+                      <span>Auto quality check</span>
                     </label>
+
                   </div>
                 </div>
 
@@ -676,11 +681,38 @@ export default function Executor() {
           <div className="lightbox">
             <AuthedImage url={lightbox.url} className="lightbox-img" />
             <dl className="meta">
+              <dt>LLM prompt expansion</dt>
+              <dd>{lightbox.expanded_prompt ? "On" : "Off"}</dd>
+              <dt>Automatic quality check</dt>
+              <dd>
+                {lightbox.qa_status === "skipped"
+                  ? "Off"
+                  : `On — ${
+                      lightbox.qa_status === "passed" ? "✓ passed" : "✕ rejected"
+                    }`}
+                {lightbox.qa_status !== "skipped" && lightbox.qa_reason
+                  ? ` (${lightbox.qa_reason})`
+                  : ""}
+              </dd>
+              {lightbox.qa_status !== "skipped" &&
+                lightbox.clip_score != null && (
+                  <>
+                    <dt>Prompt-match score</dt>
+                    <dd>{lightbox.clip_score.toFixed(3)}</dd>
+                  </>
+                )}
+              {lightbox.qa_status !== "skipped" &&
+                lightbox.lpips_diversity != null && (
+                  <>
+                    <dt>Batch diversity</dt>
+                    <dd>{lightbox.lpips_diversity.toFixed(3)}</dd>
+                  </>
+                )}
               <dt>Prompt</dt>
               <dd>{lightbox.prompt}</dd>
               {lightbox.expanded_prompt && (
                 <>
-                  <dt>Expanded</dt>
+                  <dt>Prompt added by LLM</dt>
                   <dd>{lightbox.expanded_prompt}</dd>
                 </>
               )}
@@ -692,28 +724,8 @@ export default function Executor() {
               </dd>
               <dt>Workflow</dt>
               <dd>{lightbox.workflow_type}</dd>
-              {lightbox.qa_status !== "skipped" && (
-                <>
-                  <dt>QA verdict</dt>
-                  <dd>
-                    {lightbox.qa_status === "passed" ? "✓ Passed" : "✕ Rejected"}
-                    {lightbox.qa_reason ? ` — ${lightbox.qa_reason}` : ""}
-                  </dd>
-                  {lightbox.clip_score != null && (
-                    <>
-                      <dt>CLIP score</dt>
-                      <dd>{lightbox.clip_score.toFixed(3)}</dd>
-                    </>
-                  )}
-                  {lightbox.lpips_diversity != null && (
-                    <>
-                      <dt>LPIPS diversity</dt>
-                      <dd>{lightbox.lpips_diversity.toFixed(3)}</dd>
-                    </>
-                  )}
-                </>
-              )}
             </dl>
+
             {!locked && (
               <div className="lightbox-actions">
                 {lightbox.qa_status === "failed" && (
@@ -728,10 +740,11 @@ export default function Executor() {
                 <button
                   className="btn btn-secondary"
                   disabled={imgBusy}
-                  onClick={() => regenerateAsset(lightbox)}
+                  onClick={() => setRegenTarget(lightbox)}
                 >
-                  ♻ Regenerate
+                  ♻ Regenerate…
                 </button>
+
                 <button
                   className="btn btn-danger"
                   disabled={imgBusy}
@@ -745,12 +758,208 @@ export default function Executor() {
           </div>
         </Modal>
       )}
+      {regenTarget && (
+        <RegenerateModal
+          asset={regenTarget}
+          busy={imgBusy}
+          onClose={() => setRegenTarget(null)}
+          onSubmit={(override) => regenerateAsset(regenTarget, override)}
+        />
+      )}
       {toast && (
         <Toast message={toast.m} kind={toast.k} onClose={() => setToast(null)} />
       )}
     </div>
   );
 }
+
+function RegenerateModal({
+  asset,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  asset: ImageAsset;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (override: any) => void;
+}) {
+  // Seed the form from the original asset so a plain re-roll is one click away,
+  // while every field remains editable — that flexibility is the whole point.
+  const base: GenParams = { ...DEFAULT_PARAMS, ...(asset.params as any) };
+  const [prompt, setPrompt] = useState(asset.prompt);
+  const [llm, setLlm] = useState(!!asset.expanded_prompt);
+  const [qa, setQa] = useState(asset.qa_status !== "skipped");
+  const [p, setP] = useState<GenParams>(base);
+  const patch = (x: Partial<GenParams>) => setP((prev) => ({ ...prev, ...x }));
+
+  const submit = () => {
+    onSubmit({
+      prompt,
+      llm_expand: llm,
+      qa_check: qa,
+      // Seed left null -> the backend rolls a fresh one for a new variation.
+      params: { ...p, seed: null },
+    });
+  };
+
+  return (
+    <Modal title="Regenerate asset" onClose={onClose}>
+      <div className="form">
+        <p className="muted">
+          Tweak anything below, then re-roll. This replaces the current asset
+          with a new one (fresh seed).
+        </p>
+        <label className="field">
+          <span>Prompt</span>
+          <textarea
+            rows={3}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span>Negative prompt</span>
+          <textarea
+            rows={2}
+            value={p.negative_prompt}
+            onChange={(e) => patch({ negative_prompt: e.target.value })}
+          />
+        </label>
+
+        <label className="field">
+          <span>Workflow / Style LoRA</span>
+          <select
+            value={p.workflow_type}
+            onChange={(e) => patch({ workflow_type: e.target.value })}
+          >
+            {WORKFLOWS.map((w) => (
+              <option key={w.value} value={w.value}>
+                {w.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="field-row">
+          <label className="field">
+            <span>Width</span>
+            <input
+              type="number"
+              min={256}
+              max={2048}
+              step={64}
+              value={p.width}
+              onChange={(e) => patch({ width: +e.target.value })}
+            />
+          </label>
+          <label className="field">
+            <span>Height</span>
+            <input
+              type="number"
+              min={256}
+              max={2048}
+              step={64}
+              value={p.height}
+              onChange={(e) => patch({ height: +e.target.value })}
+            />
+          </label>
+        </div>
+
+        <div className="field-row">
+          <label className="field">
+            <span>Steps: {p.steps}</span>
+            <input
+              type="range"
+              min={5}
+              max={60}
+              value={p.steps}
+              onChange={(e) => patch({ steps: +e.target.value })}
+            />
+          </label>
+          <label className="field">
+            <span>CFG: {p.cfg}</span>
+            <input
+              type="range"
+              min={1}
+              max={12}
+              step={0.5}
+              value={p.cfg}
+              onChange={(e) => patch({ cfg: +e.target.value })}
+            />
+          </label>
+        </div>
+
+        <div className="field-row">
+          <label className="field">
+            <span>Sampler</span>
+            <select
+              value={p.sampler_name}
+              onChange={(e) => patch({ sampler_name: e.target.value })}
+            >
+              {SAMPLERS.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Scheduler</span>
+            <select
+              value={p.scheduler}
+              onChange={(e) => patch({ scheduler: e.target.value })}
+            >
+              {SCHEDULERS.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="field-row">
+          <label className="field">
+            <span>LoRA strength: {p.style_lora_strength}</span>
+            <input
+              type="range"
+              min={0}
+              max={1.5}
+              step={0.05}
+              value={p.style_lora_strength}
+              onChange={(e) => patch({ style_lora_strength: +e.target.value })}
+            />
+          </label>
+        </div>
+
+        <div className="field-row">
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={llm}
+              onChange={(e) => setLlm(e.target.checked)}
+            />
+            <span>LLM prompt expansion</span>
+          </label>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={qa}
+              onChange={(e) => setQa(e.target.checked)}
+            />
+            <span>Auto quality check</span>
+          </label>
+        </div>
+
+        <button
+          className="btn btn-primary btn-block"
+          disabled={busy || !prompt.trim()}
+          onClick={submit}
+        >
+          ♻ Regenerate
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 
 function CreatePackageModal({
   onClose,

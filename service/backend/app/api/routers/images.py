@@ -10,7 +10,8 @@ from fastapi.responses import Response
 from ...models import GenerationJob, ImageAsset, Package, User
 from ...models.common import GenerationParams
 from ...models.enums import PackageStatus, UserRole
-from ...schemas import ImageOut, JobOut, image_out, job_out
+from ...schemas import ImageOut, JobOut, RegenerateRequest, image_out, job_out
+
 from ...services.storage import get_storage
 from ..deps import get_current_user, require_executor
 
@@ -120,28 +121,59 @@ async def restore_image(image_id: str, user: User = Depends(require_executor)):
 @router.post("/images/{image_id}/regenerate", response_model=JobOut, status_code=202)
 
 async def regenerate_image(
-    image_id: str, user: User = Depends(require_executor)
+    image_id: str,
+    body: RegenerateRequest | None = None,
+    user: User = Depends(require_executor),
 ):
-    """Re-roll a single asset: queue a fresh 1-image job reusing the original
-    asset's prompt and parameters but a new random seed. The old asset is
-    removed so the package keeps its size."""
+    """Re-roll a single asset as a fresh 1-image job.
+
+    By default it reuses the original asset's prompt / params / modes with a new
+    random seed. The optional request body lets the executor tweak the prompt,
+    the generation parameters, LLM expansion and the QA gate for the re-roll —
+    that flexibility is the whole point of regenerating. The old asset is
+    removed so the package keeps its size.
+    """
     img = await _get_image_or_404(image_id)
     _authorise(img, user)
     pkg = await _assert_package_editable(img.package_id)
 
-    params = GenerationParams(**(img.params or {}))
-    params.seed = None  # force a fresh seed for a genuinely different result
+    overrides = body or RegenerateRequest()
+
+    # Params: use the supplied override wholesale, else fall back to the asset's.
+    params = overrides.params or GenerationParams(**(img.params or {}))
+    # A fresh seed unless the caller explicitly pinned one in the override.
+    if overrides.params is None or overrides.params.seed is None:
+        params.seed = None
+
+    prompt = overrides.prompt if overrides.prompt is not None else img.prompt
+    # Reuse the original job's LLM mode when the client doesn't say otherwise.
+    # (Tolerate a missing / non-ObjectId job_id — just fall back to off.)
+    default_llm = False
+    if overrides.llm_expand is None:
+        try:
+            original_job = await GenerationJob.get(PydanticObjectId(img.job_id))
+            default_llm = bool(getattr(original_job, "llm_expand", False))
+        except Exception:
+            default_llm = False
+    llm_expand = overrides.llm_expand if overrides.llm_expand is not None else default_llm
+
+    params.qa_check = (
+        overrides.qa_check
+        if overrides.qa_check is not None
+        else bool(getattr(params, "qa_check", False))
+    )
 
     job = GenerationJob(
         package_id=img.package_id,
         owner_id=str(user.id),
-        prompt=img.prompt,
+        prompt=prompt,
         negative_prompt=params.negative_prompt,
-        llm_expand=False,
+        llm_expand=llm_expand,
         batch_size=1,
         params=params,
     )
     await job.insert()
+
 
     # Drop the asset being replaced.
     await asyncio.to_thread(get_storage().remove_image, img.object_key)

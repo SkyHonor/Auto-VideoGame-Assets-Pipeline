@@ -255,3 +255,38 @@ async def test_regenerate_asset_queues_job(client, storage):
     assert len(remaining) == 1
     pkg = (await client.get(f"{API}/packages/{pid}", headers=artist)).json()
     assert pkg["status"] == "generating"
+
+
+async def test_regenerate_asset_applies_overrides(client, storage):
+    """Regenerating may override the prompt, params, LLM and QA modes — that
+    editability is the whole point of a re-roll."""
+    artist = await auth_headers(client, "artist", "artist123")
+    owner_id = (await client.get(f"{API}/auth/me", headers=artist)).json()["id"]
+    pid = (
+        await client.post(
+            f"{API}/packages", json={"name": "Reroll edit"}, headers=artist
+        )
+    ).json()["id"]
+    ids = await simulate_generation(pid, owner_id, storage, n=1)
+
+    body = {
+        "prompt": "a completely different wizard",
+        "llm_expand": True,
+        "qa_check": True,
+        "params": {"workflow_type": "props", "steps": 30, "cfg": 6.5},
+    }
+    r = await client.post(
+        f"{API}/images/{ids[0]}/regenerate", json=body, headers=artist
+    )
+    assert r.status_code == 202
+    job = r.json()
+    assert job["prompt"] == "a completely different wizard"
+    assert job["llm_expand"] is True
+    assert job["batch_size"] == 1
+    assert job["params"]["workflow_type"] == "props"
+    assert job["params"]["steps"] == 30
+    assert job["params"]["qa_check"] is True
+    # Seed is re-rolled, never carried over from the override request.
+    assert job["params"]["seed"] is None
+
+

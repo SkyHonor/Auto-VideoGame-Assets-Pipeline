@@ -161,8 +161,12 @@ export const api = {
   deletePackage: (id: string) =>
     req<void>(`/packages/${id}`, { method: "DELETE" }),
   deleteImage: (id: string) => req<void>(`/images/${id}`, { method: "DELETE" }),
-  regenerateImage: (id: string) =>
-    req<Job>(`/images/${id}/regenerate`, { method: "POST" }),
+  regenerateImage: (id: string, body?: any) =>
+    req<Job>(`/images/${id}/regenerate`, {
+      method: "POST",
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    }),
+
   restoreImage: (id: string) =>
     req<ImageAsset>(`/images/${id}/restore`, { method: "POST" }),
 

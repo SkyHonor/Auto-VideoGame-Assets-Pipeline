@@ -224,15 +224,43 @@ export default function Director() {
           <div className="lightbox">
             <AuthedImage url={lightbox.url} className="lightbox-img" />
             <dl className="meta">
+              <dt>LLM prompt expansion</dt>
+              <dd>{lightbox.expanded_prompt ? "On" : "Off"}</dd>
+              <dt>Automatic quality check</dt>
+              <dd>
+                {lightbox.qa_status === "skipped"
+                  ? "Off"
+                  : `On — ${
+                      lightbox.qa_status === "passed" ? "✓ passed" : "✕ rejected"
+                    }`}
+                {lightbox.qa_status !== "skipped" && lightbox.qa_reason
+                  ? ` (${lightbox.qa_reason})`
+                  : ""}
+              </dd>
+              {lightbox.qa_status !== "skipped" &&
+                lightbox.clip_score != null && (
+                  <>
+                    <dt>Prompt-match score</dt>
+                    <dd>{lightbox.clip_score.toFixed(3)}</dd>
+                  </>
+                )}
+              {lightbox.qa_status !== "skipped" &&
+                lightbox.lpips_diversity != null && (
+                  <>
+                    <dt>Batch diversity</dt>
+                    <dd>{lightbox.lpips_diversity.toFixed(3)}</dd>
+                  </>
+                )}
               <dt>Prompt</dt>
               <dd>{lightbox.prompt}</dd>
               {lightbox.expanded_prompt && (
                 <>
-                  <dt>Expanded (LLM)</dt>
+                  <dt>Prompt added by LLM</dt>
                   <dd>{lightbox.expanded_prompt}</dd>
                 </>
               )}
               <dt>Negative prompt</dt>
+
               <dd>{lightbox.negative_prompt || "—"}</dd>
               <dt>Seed</dt>
               <dd>{lightbox.seed}</dd>
