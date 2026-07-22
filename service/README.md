@@ -95,7 +95,29 @@ draft ──generate──▶ (draft) ──submit──▶ pending_review
 | Очередь / воркеры | Celery + Redis (broker & result backend)                        |
 | Инференс        | **Anima Base (Cosmos2)** через ComfyUI, Ollama (LLM prompt expand) |
 | Тесты           | pytest, mongomock-motor, ASGITransport                            |
-| Упаковка        | Docker, docker-compose (профили `gpu`, `models`)                 |
+| Упаковка        | Docker, docker-compose (единая GPU-сборка, one-command deploy)     |
+
+---
+
+## 3.1. Из чего собран стек (provenance)
+
+Все компоненты происходят из официальных источников и закреплены на конкретные
+версии — сборка детерминирована и воспроизводима на любой машине с NVIDIA GPU.
+
+| Сервис              | Источник                                             | Тип                         |
+|---------------------|------------------------------------------------------|-----------------------------|
+| backend / worker    | собственный `backend/Dockerfile`                     | сборка из исходников проекта |
+| frontend            | собственный `frontend/Dockerfile`                    | сборка из исходников проекта |
+| **ComfyUI**         | `github.com/comfyanonymous/ComfyUI` (официальный)    | **сборка из офиц. репозитория** |
+| **Ollama**          | `ollama/ollama:0.3.14` (официальный образ)           | офиц. образ + auto `pull`   |
+| MongoDB             | `mongo:7.0` (официальный образ)                      | офиц. образ                 |
+| Redis               | `redis:7.4-alpine` (официальный образ)              | офиц. образ                 |
+| MinIO               | `minio/minio:RELEASE.2024-10-13...` (официальный)   | офиц. образ                 |
+| Модели (Anima Base) | `huggingface.co/SkyHonor/*` (публичные)             | auto-download на старте      |
+
+ComfyUI собирается из официального GitHub поверх официального образа
+`pytorch/pytorch` с CUDA — см. `comfyui/Dockerfile`. Ollama-модель и веса моделей
+скачиваются автоматически при первом `docker compose up`, ручная настройка не требуется.
 
 ---
 
@@ -103,8 +125,10 @@ draft ──generate──▶ (draft) ──submit──▶ pending_review
 
 ```
 service/
-├── docker-compose.yml         # весь стек одной командой
-├── .env.example               # конфигурация (по умолчанию mock-режим без GPU)
+├── docker-compose.yml         # весь стек одной командой (GPU-only)
+├── .env.example               # конфигурация (модели, БД, ComfyUI, Ollama)
+├── comfyui/                    # Dockerfile сборки ComfyUI из офиц. GitHub
+├── ollama/                    # init-скрипт auto-pull LLM из офиц. реестра
 ├── backend/
 │   ├── Dockerfile             # один образ для API и для worker
 │   ├── app/
@@ -123,27 +147,39 @@ service/
 │   ├── nginx.conf             # SPA + reverse-proxy /api → backend
 │   └── src/                   # App, Executor, Director, api-клиент, стили
 └── models/
-    ├── base-downloader/       # разовая загрузка базовых чекпоинтов из HuggingFace
-    └── lora-store/            # смонтированные style-LoRA проекта
+    ├── base-downloader/       # авто-загрузка Anima Base из HuggingFace
+    ├── lora-downloader/       # авто-загрузка LoRA из HuggingFace
+    ├── checkpoints/           # (том) скачанные базовые веса → ComfyUI
+    └── lora-store/            # (том) скачанные LoRA → ComfyUI
 ```
 
 ---
 
-## 5. Быстрый старт (без GPU, «из коробки»)
+## 5. Развёртывание (одна команда)
 
-Работает в mock-режиме: воркеры генерируют детерминированные изображения-плейсхолдеры
-(как `DRY_RUN` в ноутбуках), поэтому весь пайплайн можно продемонстрировать без видеокарты.
+**Требования к хосту:** NVIDIA GPU + NVIDIA Container Toolkit + свободное место
+на диске (~30 ГБ под образы и веса моделей). Больше ничего настраивать не нужно.
 
 ```bash
 cd service
 cp .env.example .env
-docker compose up --build
+docker compose up --build -d
 ```
+
+При первом запуске автоматически:
+1. Собирается ComfyUI из официального репозитория `comfyanonymous/ComfyUI`.
+2. `model-init` / `lora-init` скачивают веса Anima Base + LoRA из публичных
+   репозиториев `SkyHonor/*` на HuggingFace (ручных шагов нет).
+3. ComfyUI стартует только после того, как модели скачаны
+   (`depends_on: service_completed_successfully`).
+4. `ollama-init` автоматически подтягивает LLM `qwen2.5:3b` из официального
+   реестра Ollama для расширения промптов.
 
 | Сервис        | URL                        |
 |---------------|----------------------------|
 | UI            | http://localhost:5173      |
 | API + Swagger | http://localhost:8000/docs |
+| ComfyUI       | http://localhost:8188      |
 | MinIO консоль | http://localhost:9001      |
 
 **Демо-аккаунты** (создаются автоматически при первом запуске):
@@ -173,37 +209,27 @@ docker compose up --scale worker=4
 
 ---
 
-## 7. Реальный GPU-инференс
+## 7. Модели инференса (Anima Base)
 
-### Автоматическая загрузка моделей из HuggingFace
+Все веса автоматически скачиваются сервисами `model-init` / `lora-init` из
+публичных HuggingFace-репозиториев `SkyHonor/*` при первом `docker compose up`.
+Загрузка идемпотентна: уже скачанные файлы пропускаются.
 
-Проект настроен на автоматическую загрузку **Anima Base (Cosmos2)** и LoRA из публичных репозиториев `SkyHonor/*`:
-
-```bash
-# 1) Скопируйте .env.example в .env (уже настроен на SkyHonor/Anima, Acceleration_Lora, Prototype)
-cp .env.example .env
-
-# 2) Если репозитории приватные, добавьте HF_TOKEN в .env:
-#    HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# 3) Загрузите модели один раз (скачает ~6 GB):
-docker compose --profile models up model-init lora-init
-
-# 4) Выключите mock-режим в .env:
-#    COMFYUI_MOCK=false
-
-# 5) Запустите GPU-стек:
-docker compose --profile gpu up --build
-```
-
-**Что загружается:**
-- **Anima Base** (Cosmos2): `anima-base-v1.0.safetensors` (UNet), `qwen_3_06b_base.safetensors` (Text Encoder), `qwen_image_vae.safetensors` (VAE)
+**Что загружается (~6 GB):**
+- **Anima Base** (Cosmos2): `anima-base-v1.0.safetensors` (UNet),
+  `qwen_3_06b_base.safetensors` (Text Encoder), `qwen_image_vae.safetensors` (VAE)
+  — репозиторий `SkyHonor/Anima`
 - **Turbo LoRA**: `anima-turbo-lora-v0.2.safetensors` (ускорение инференса)
-- **Style LoRA**: `SlyToon-Anima-v1.safetensors` (персонажи, триггер `@sltn`), `SpellIcons-Anima-v1.safetensors` (пропсы, триггер `@spll_icn`)
+  — репозиторий `SkyHonor/Acceleration_Lora`
+- **Style LoRA**: `SlyToon-Anima-v1.safetensors` (персонажи, триггер `@sltn`),
+  `SpellIcons-Anima-v1.safetensors` (пропсы, триггер `@spll_icn`)
+  — репозиторий `SkyHonor/Prototype`
 
-`comfyui` требует NVIDIA GPU (в compose проброшены устройства через
-`deploy.resources`). `ollama` используется, когда исполнитель включает тумблер
-**LLM prompt expansion**.
+Список моделей задаётся переменными `BASE_MODELS` / `LORA_MODELS` в `.env`
+(формат `repo_id:filename`), поэтому подменить набор весов можно без правки кода.
+`comfyui` и `ollama` требуют NVIDIA GPU (проброс устройств через `deploy.resources`).
+LLM `qwen2.5:3b` используется, когда исполнитель включает тумблер
+**LLM prompt expansion** в UI.
 
 ---
 

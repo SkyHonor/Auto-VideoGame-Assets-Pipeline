@@ -1,24 +1,29 @@
-# AssetForge — on-premise game-asset generation stack.
+# AssetForge — on-premise game-asset generation stack (GPU-only).
 #
-# Quick start (works out of the box in mock mode, no GPU required):
+# Requirements: NVIDIA GPU + NVIDIA Container Toolkit + free disk space (~30 GB
+# for images and model weights). No other host configuration is needed.
+#
+# Single-command deployment (pulls models & LLM automatically on first run):
 #   cp .env.example .env
-#   docker compose up --build
+#   docker compose up --build -d
+#
 #   UI:        http://localhost:5173
 #   API docs:  http://localhost:8000/docs
+#   ComfyUI:   http://localhost:8188
 #   MinIO UI:  http://localhost:9001  (minioadmin / minioadmin)
 #
-# Scale the GPU worker pool horizontally:
-#   docker compose up --scale worker=4
+# Scale the GPU generation worker pool horizontally:
+#   docker compose up -d --scale worker=4
 #
-# Enable real GPU inference (ComfyUI + Ollama) and model download:
-#   docker compose --profile gpu --profile models up --build
-#   (and set COMFYUI_MOCK=false in .env)
+# Provenance of every component is documented in README.md (§ "Из чего собран
+# стек"): ComfyUI is built from the official upstream GitHub repository, Ollama
+# and the datastores use official images pinned to explicit versions.
 
 name: assetforge
 
 services:
   mongo:
-    image: mongo:7
+    image: mongo:7.0
     restart: unless-stopped
     volumes:
       - mongo_data:/data/db
@@ -29,7 +34,7 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
     command: server /data --console-address ":9001"
     restart: unless-stopped
     environment:
@@ -47,13 +52,76 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # ---- One-shot model provisioning from HuggingFace (public SkyHonor/* repos) ----
+  # These run to completion on `up` and populate the shared model volumes before
+  # ComfyUI starts. Idempotent: already-present files are skipped on re-runs.
+  model-init:
+    build: ./models/base-downloader
+    env_file: .env
+    restart: "no"
+    volumes:
+      - ./models/checkpoints:/models/checkpoints
+
+  lora-init:
+    build: ./models/lora-downloader
+    env_file: .env
+    restart: "no"
+    volumes:
+      - ./models/lora-store:/models/loras
+
+  # ---- GPU inference: ComfyUI built from the OFFICIAL upstream repository ----
+  comfyui:
+    build: ./comfyui
+    restart: unless-stopped
+    ports:
+      - "8188:8188"
+    volumes:
+      - ./models/checkpoints:/opt/ComfyUI/models/checkpoints
+      - ./models/lora-store:/opt/ComfyUI/models/loras
+    depends_on:
+      model-init: {condition: service_completed_successfully}
+      lora-init: {condition: service_completed_successfully}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ---- Local LLM for prompt expansion: official Ollama image + auto model pull ----
+  ollama:
+    image: ollama/ollama:0.3.14
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  ollama-init:
+    image: curlimages/curl:8.10.1
+    restart: "no"
+    env_file: .env
+    depends_on:
+      - ollama
+    volumes:
+      - ./ollama/pull-model.sh:/pull-model.sh:ro
+    entrypoint: ["sh", "/pull-model.sh"]
 
   backend:
     build: ./backend
@@ -71,7 +139,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Horizontally scalable generation worker pool: `docker compose up --scale worker=N`
+  # Horizontally scalable GPU generation worker pool: `--scale worker=N`
   worker:
     build: ./backend
     restart: unless-stopped
@@ -81,6 +149,7 @@ services:
       mongo: {condition: service_healthy}
       minio: {condition: service_healthy}
       redis: {condition: service_healthy}
+      comfyui: {condition: service_started}
 
   frontend:
     build: ./frontend
@@ -89,48 +158,6 @@ services:
       - backend
     ports:
       - "5173:80"
-
-  # ---- Optional GPU inference (profile: gpu) ----
-  comfyui:
-    image: yanwk/comfyui-boot:latest
-    profiles: ["gpu"]
-    restart: unless-stopped
-    ports:
-      - "8188:8188"
-    volumes:
-      - ./models/checkpoints:/root/ComfyUI/models/checkpoints
-      - ./models/lora-store:/root/ComfyUI/models/loras
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
-  ollama:
-    image: ollama/ollama:latest
-    profiles: ["gpu"]
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-
-  # ---- One-shot base-model provisioning from HuggingFace (profile: models) ----
-  model-init:
-    build: ./models/base-downloader
-    profiles: ["models"]
-    env_file: .env
-    volumes:
-      - ./models/checkpoints:/models/checkpoints
-
-  lora-init:
-    build: ./models/lora-downloader
-    profiles: ["models"]
-    env_file: .env
-    volumes:
-      - ./models/lora-store:/models/loras
 
 volumes:
   mongo_data:
