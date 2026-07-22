@@ -59,7 +59,9 @@ class GenerateRequest(BaseModel):
     prompt: str = Field(min_length=1)
     batch_size: int = Field(default=1, ge=1, le=16)
     llm_expand: bool = False
+    qa_check: bool = False  # optional automatic ML quality gate (CLIP + LPIPS)
     params: GenerationParams = Field(default_factory=GenerationParams)
+
 
 
 class JobOut(BaseModel):
@@ -91,8 +93,13 @@ class ImageOut(BaseModel):
     workflow_type: str
     size_bytes: int = 0
     params: dict[str, Any] = Field(default_factory=dict)
+    qa_status: str = "skipped"
+    qa_reason: str | None = None
+    clip_score: float | None = None
+    lpips_diversity: float | None = None
     created_at: datetime
     url: str
+
 
 
 # ------------------------- Reviews -------------------------
@@ -174,9 +181,14 @@ def image_out(img, api_prefix: str = "/api/v1") -> dict:
         "workflow_type": img.workflow_type,
         "size_bytes": getattr(img, "size_bytes", 0),
         "params": getattr(img, "params", {}) or {},
+        "qa_status": getattr(img, "qa_status", "skipped"),
+        "qa_reason": getattr(img, "qa_reason", None),
+        "clip_score": getattr(img, "clip_score", None),
+        "lpips_diversity": getattr(img, "lpips_diversity", None),
         "created_at": img.created_at,
         "url": f"{api_prefix}/images/{str(img.id)}/file",
     }
+
 
 
 def review_out(r) -> dict:

@@ -44,6 +44,19 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2.5:3b"
     ollama_timeout: int = 120
 
+    # --- Automatic quality assurance (optional per-request gate) ---
+    # CLIP Score checks prompt<->image alignment for every image; LPIPS checks
+    # in-batch diversity (only meaningful for batches of >= qa_lpips_min_batch).
+    # Thresholds are derived from the research phase (see baseline/README.md).
+    # When the metric libraries are unavailable the worker degrades gracefully
+    # and marks assets as `skipped` instead of blocking generation.
+    qa_clip_model: str = "ViT-B-32"
+    qa_clip_pretrained: str = "openai"
+    qa_min_clip_score: float = 0.22
+    qa_min_lpips_diversity: float = 0.10
+    qa_lpips_min_batch: int = 4
+
+
     # --- Auth / JWT ---
     jwt_secret: str = "change-me-in-production-please"
     jwt_algorithm: str = "HS256"

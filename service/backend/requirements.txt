@@ -26,6 +26,14 @@ httpx==0.28.1
 
 # --- Imaging (mock generation, thumbnails) ---
 pillow==11.0.0
+numpy==2.2.1
+
+# --- Automatic QA gate (CLIP + LPIPS) ---
+# Heavy ML deps live in requirements-qa.txt so the default image stays slim.
+# When absent, services/quality.py degrades gracefully (assets -> "skipped").
+# Install on the worker image only if you want the online quality gate:
+#   pip install -r requirements-qa.txt
+
 
 
 # --- Tests ---

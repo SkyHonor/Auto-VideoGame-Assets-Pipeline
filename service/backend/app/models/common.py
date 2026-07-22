@@ -27,6 +27,13 @@ class GenerationParams(BaseModel):
     )
     style_lora_strength: float = Field(default=0.85, ge=0.0, le=2.0)
 
+    # Optional automatic ML quality gate (like LLM expansion, toggled per job
+    # from the UI). When on, CLIP Score is checked for every image and LPIPS
+    # diversity for batches of >= qa_lpips_min_batch; failing assets are kept
+    # but hidden from the default gallery.
+    qa_check: bool = False
+
+
     # Quality-anchor prefix prepended to the user prompt. Anima Base (Cosmos 2)
     # was trained on WD-14 Booru-style tags, so we use plain quality tags here
     # (not Pony score_* tags). Kept separate from the user's creative text so it

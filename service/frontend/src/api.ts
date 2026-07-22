@@ -7,6 +7,8 @@ export type PackageStatus =
   | "approved"
   | "rejected";
 export type JobStatus = "pending" | "running" | "completed" | "failed";
+export type QAStatus = "skipped" | "passed" | "failed";
+
 
 export interface User {
   id: string;
@@ -48,9 +50,14 @@ export interface ImageAsset {
   workflow_type: string;
   size_bytes: number;
   params: Record<string, any>;
+  qa_status: QAStatus;
+  qa_reason: string | null;
+  clip_score: number | null;
+  lpips_diversity: number | null;
   created_at: string;
   url: string;
 }
+
 export interface Job {
   id: string;
   package_id: string;
@@ -133,7 +140,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ name, description }),
     }),
-  listImages: (id: string) => req<ImageAsset[]>(`/packages/${id}/images`),
+  listImages: (id: string, includeFailed = false) =>
+    req<ImageAsset[]>(
+      `/packages/${id}/images${includeFailed ? "?include_failed=true" : ""}`
+    ),
+
   generate: (id: string, body: any) =>
     req<Job>(`/packages/${id}/generate`, {
       method: "POST",
@@ -152,6 +163,9 @@ export const api = {
   deleteImage: (id: string) => req<void>(`/images/${id}`, { method: "DELETE" }),
   regenerateImage: (id: string) =>
     req<Job>(`/images/${id}/regenerate`, { method: "POST" }),
+  restoreImage: (id: string) =>
+    req<ImageAsset>(`/images/${id}/restore`, { method: "POST" }),
+
   downloadUrl: (id: string) => `${BASE}/packages/${id}/download`,
 };
 

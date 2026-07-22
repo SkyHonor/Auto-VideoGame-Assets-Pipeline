@@ -34,15 +34,22 @@ async def generate(
             detail="Package is locked for review; create a new one to generate.",
         )
 
+    # The QA toggle lives on the request; persist it into the params so the
+    # worker (which only reads job.params) can honour it, and so a regenerate
+    # reproducing these params keeps the same behaviour.
+    params = payload.params
+    params.qa_check = payload.qa_check
+
     job = GenerationJob(
         package_id=package_id,
         owner_id=str(user.id),
         prompt=payload.prompt,
-        negative_prompt=payload.params.negative_prompt,
+        negative_prompt=params.negative_prompt,
         llm_expand=payload.llm_expand,
         batch_size=payload.batch_size,
-        params=payload.params,
+        params=params,
     )
+
     await job.insert()
 
     pkg.status = PackageStatus.GENERATING

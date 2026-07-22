@@ -30,6 +30,15 @@ class ImageAsset(Document):
     workflow_type: str = "character"
     params: dict = Field(default_factory=dict)
 
+    # Automatic ML quality gate results (see services/quality.py). `qa_status`
+    # is "skipped" when QA was off/unavailable, otherwise "passed"/"failed".
+    # Failed assets are hidden from the default gallery but the executor can
+    # still list them and manually add them back to the package.
+    qa_status: str = "skipped"
+    qa_reason: str | None = None
+    clip_score: float | None = None
+    lpips_diversity: float | None = None
+
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
@@ -37,5 +46,8 @@ class ImageAsset(Document):
         indexes = [
             pymongo.IndexModel([("package_id", pymongo.ASCENDING)]),
             pymongo.IndexModel([("job_id", pymongo.ASCENDING)]),
+            pymongo.IndexModel([("qa_status", pymongo.ASCENDING)]),
             pymongo.IndexModel([("created_at", pymongo.DESCENDING)]),
         ]
+
+

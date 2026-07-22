@@ -51,10 +51,15 @@ export default function Executor() {
   const [lightbox, setLightbox] = useState<ImageAsset | null>(null);
   const [imgBusy, setImgBusy] = useState(false);
 
+  const [rejected, setRejected] = useState<ImageAsset[]>([]);
+  const [showRejected, setShowRejected] = useState(false);
+
   const [prompt, setPrompt] = useState("");
   const [batch, setBatch] = useState(4);
   const [llm, setLlm] = useState(false);
+  const [qa, setQa] = useState(false);
   const [params, setParams] = useState<GenParams>(DEFAULT_PARAMS);
+
   const [job, setJob] = useState<Job | null>(null);
   const pollRef = useRef<number | null>(null);
 
@@ -77,14 +82,22 @@ export default function Executor() {
     };
   }, []);
 
+  // Split the full asset list (include_failed) into the visible gallery and
+  // the QA-rejected bucket the executor can review separately.
+  const applyImages = (all: ImageAsset[]) => {
+    setImages(all.filter((i) => i.qa_status !== "failed"));
+    setRejected(all.filter((i) => i.qa_status === "failed"));
+  };
+
   const openPackage = async (p: Package) => {
     setSelected(p);
+    setShowRejected(false);
     try {
       const [imgs, revs] = await Promise.all([
-        api.listImages(p.id),
+        api.listImages(p.id, true),
         api.listReviews(p.id),
       ]);
-      setImages(imgs);
+      applyImages(imgs);
       setReviews(revs);
     } catch (e: any) {
       notify(e.message);
@@ -96,13 +109,37 @@ export default function Executor() {
     const p = await api.getPackage(selected.id);
     setSelected(p);
     const [imgs, revs] = await Promise.all([
-      api.listImages(p.id),
+      api.listImages(p.id, true),
       api.listReviews(p.id),
     ]);
-    setImages(imgs);
+    applyImages(imgs);
     setReviews(revs);
     setPackages((prev) => prev.map((x) => (x.id === p.id ? p : x)));
   };
+
+  const restoreAsset = async (img: ImageAsset) => {
+    try {
+      const restored = await api.restoreImage(img.id);
+      // Move it out of the rejected bucket into the visible gallery.
+      setRejected((prev) => prev.filter((x) => x.id !== img.id));
+      setImages((prev) => [restored, ...prev]);
+      setSelected((prev) =>
+        prev ? { ...prev, image_count: prev.image_count + 1 } : prev
+      );
+      setPackages((prev) =>
+        prev.map((p) =>
+          p.id === img.package_id
+            ? { ...p, image_count: p.image_count + 1 }
+            : p
+        )
+      );
+      setLightbox(null);
+      notify("Asset added back to the package", "success");
+    } catch (e: any) {
+      notify(e.message);
+    }
+  };
+
 
   const deleteAsset = async (img: ImageAsset) => {
     if (!confirm("Delete this asset from the package?")) return;
@@ -218,8 +255,10 @@ export default function Executor() {
         prompt,
         batch_size: batch,
         llm_expand: llm,
+        qa_check: qa,
         params,
       });
+
       setJob(j);
       startPolling(j.id);
       setSelected({ ...selected, status: "generating" });
@@ -526,7 +565,19 @@ export default function Executor() {
                       <span>LLM prompt expansion</span>
                     </label>
                   </div>
+
+                  <div className="field-row">
+                    <label className="toggle" title="Score every image with CLIP (prompt match) and, for batches of 4+, LPIPS (drop near-duplicates). Rejected images are kept but hidden below.">
+                      <input
+                        type="checkbox"
+                        checked={qa}
+                        onChange={(e) => setQa(e.target.checked)}
+                      />
+                      <span>Auto quality check (CLIP + LPIPS)</span>
+                    </label>
+                  </div>
                 </div>
+
 
                 <div className="gen-actions">
                   <button
@@ -559,12 +610,58 @@ export default function Executor() {
                     onClick={() => setLightbox(img)}
                   >
                     <AuthedImage url={img.url} className="tile-img" />
+                    {img.qa_status === "passed" &&
+                      img.clip_score != null && (
+                        <span
+                          className="qa-badge qa-pass"
+                          title="Passed automatic QA"
+                        >
+                          ✓ QA {img.clip_score.toFixed(2)}
+                        </span>
+                      )}
                     <figcaption>#{img.seed}</figcaption>
                   </figure>
                 ))}
               </div>
             )}
+
+            {rejected.length > 0 && !locked && (
+              <div className="rejected-section">
+                <button
+                  className="rejected-toggle"
+                  onClick={() => setShowRejected((v) => !v)}
+                >
+                  {showRejected ? "▾" : "▸"} QA-rejected{" "}
+                  <span className="count">{rejected.length}</span>
+                  <span className="muted">
+                    {" "}
+                    · hidden from the package — review & add back if needed
+                  </span>
+                </button>
+                {showRejected && (
+                  <div className="gallery">
+                    {rejected.map((img) => (
+                      <figure
+                        key={img.id}
+                        className="tile tile-rejected"
+                        onClick={() => setLightbox(img)}
+                      >
+                        <AuthedImage url={img.url} className="tile-img" />
+                        <span
+                          className="qa-badge qa-fail"
+                          title={img.qa_reason || "Rejected by QA"}
+                        >
+                          ✕ QA
+                        </span>
+                        <figcaption>{img.qa_reason || "rejected"}</figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </>
+
         )}
       </section>
 
@@ -595,9 +692,39 @@ export default function Executor() {
               </dd>
               <dt>Workflow</dt>
               <dd>{lightbox.workflow_type}</dd>
+              {lightbox.qa_status !== "skipped" && (
+                <>
+                  <dt>QA verdict</dt>
+                  <dd>
+                    {lightbox.qa_status === "passed" ? "✓ Passed" : "✕ Rejected"}
+                    {lightbox.qa_reason ? ` — ${lightbox.qa_reason}` : ""}
+                  </dd>
+                  {lightbox.clip_score != null && (
+                    <>
+                      <dt>CLIP score</dt>
+                      <dd>{lightbox.clip_score.toFixed(3)}</dd>
+                    </>
+                  )}
+                  {lightbox.lpips_diversity != null && (
+                    <>
+                      <dt>LPIPS diversity</dt>
+                      <dd>{lightbox.lpips_diversity.toFixed(3)}</dd>
+                    </>
+                  )}
+                </>
+              )}
             </dl>
             {!locked && (
               <div className="lightbox-actions">
+                {lightbox.qa_status === "failed" && (
+                  <button
+                    className="btn btn-success"
+                    disabled={imgBusy}
+                    onClick={() => restoreAsset(lightbox)}
+                  >
+                    ＋ Add to package
+                  </button>
+                )}
                 <button
                   className="btn btn-secondary"
                   disabled={imgBusy}
@@ -614,6 +741,7 @@ export default function Executor() {
                 </button>
               </div>
             )}
+
           </div>
         </Modal>
       )}

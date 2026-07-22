@@ -230,3 +230,37 @@ h1, h2, h3 { margin: 0 0 6px; font-weight: 650; letter-spacing: -0.01em; }
   .workspace { grid-template-columns: 1fr; height: auto; }
   .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
 }
+
+/* ---- Automatic QA gate (CLIP + LPIPS) ---- */
+.tile { position: relative; }
+.qa-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: #fff;
+  pointer-events: none;
+}
+.qa-pass { background: rgba(22, 163, 74, 0.9); }
+.qa-fail { background: rgba(220, 38, 38, 0.9); }
+.tile-rejected .tile-img { opacity: 0.55; filter: grayscale(0.3); }
+.rejected-section { margin-top: 20px; }
+.rejected-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: inherit;
+  padding: 8px 0;
+}
+.rejected-toggle .count {
+  background: rgba(220, 38, 38, 0.15);
+  color: #dc2626;
+  border-radius: 6px;
+  padding: 1px 7px;
+  margin: 0 4px;
+}

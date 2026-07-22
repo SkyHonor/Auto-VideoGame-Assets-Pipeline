@@ -35,7 +35,21 @@ class ReviewDecision(str, Enum):
     REJECT = "reject"
 
 
+class QAStatus(str, Enum):
+    """Result of the automatic ML quality gate (CLIP Score + LPIPS diversity).
+
+    When the executor enables QA, each generated asset is scored; assets that
+    fail the thresholds are hidden from the default gallery but kept so the
+    executor can still review and manually add them back to the package.
+    """
+
+    SKIPPED = "skipped"  # QA disabled for this job, or metrics unavailable
+    PASSED = "passed"    # met every enabled threshold
+    FAILED = "failed"    # rejected by at least one metric
+
+
 class WorkflowType(str, Enum):
+
     """Which LoRA / brandbook pipeline to run in ComfyUI.
 
     Mirrors the two trained adapters from the research phase:

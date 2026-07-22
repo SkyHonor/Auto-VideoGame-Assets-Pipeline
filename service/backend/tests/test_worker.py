@@ -63,12 +63,16 @@ def test_worker_generates_batch_in_mock_mode(monkeypatch):
 
     result = tasks_mod.generate_images_task(str(job_id))
 
-    assert result == {"status": "completed", "images": 3}
+    # QA is off for this job, so every rendered image is visible.
+    assert result == {"status": "completed", "images": 3, "visible": 3}
     job = db["jobs"].find_one({"_id": job_id})
     assert job["status"] == "completed"
     assert len(job["image_ids"]) == 3
     assert db["images"].count_documents({}) == 3
     assert len(fake.store) == 3
+    # Without the QA gate assets are persisted as "skipped" (never blocked).
+    assert all(img["qa_status"] == "skipped" for img in db["images"].find({}))
+
 
     pkg = db["packages"].find_one({"_id": pkg_id})
     assert pkg["image_count"] == 3

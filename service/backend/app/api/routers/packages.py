@@ -86,17 +86,31 @@ async def get_package(package_id: str, user: User = Depends(get_current_user)):
 
 @router.get("/packages/{package_id}/images", response_model=list[ImageOut])
 async def list_package_images(
-    package_id: str, user: User = Depends(get_current_user)
+    package_id: str,
+    user: User = Depends(get_current_user),
+    include_failed: bool = Query(
+        default=False,
+        description="Include assets rejected by the automatic QA gate.",
+    ),
 ):
+    """List a package's assets.
+
+    By default QA-failed assets are hidden (they are the ones the automatic
+    gate rejected). The executor can pass ``include_failed=true`` to review
+    them and optionally add them back to the package. Art-directors always see
+    only the curated (non-failed) set for review.
+    """
     pkg = await _get_package_or_404(package_id)
     if user.role == UserRole.EXECUTOR:
         _assert_owner(pkg, user)
-    images = (
-        await ImageAsset.find(ImageAsset.package_id == package_id)
-        .sort("-created_at")
-        .to_list()
-    )
+
+    show_failed = include_failed and user.role == UserRole.EXECUTOR
+    query = ImageAsset.find(ImageAsset.package_id == package_id)
+    if not show_failed:
+        query = query.find(ImageAsset.qa_status != "failed")
+    images = await query.sort("-created_at").to_list()
     return [image_out(img) for img in images]
+
 
 
 @router.post("/packages/{package_id}/submit", response_model=PackageOut)
@@ -197,10 +211,16 @@ async def download_package(package_id: str, user: User = Depends(get_current_use
             status_code=409, detail="Only APPROVED packages can be downloaded"
         )
 
-    images = await ImageAsset.find(ImageAsset.package_id == package_id).to_list()
+    # Only curated (non QA-failed) assets go into the production ZIP.
+    images = await (
+        ImageAsset.find(ImageAsset.package_id == package_id)
+        .find(ImageAsset.qa_status != "failed")
+        .to_list()
+    )
     storage = get_storage()
 
     def _build_zip() -> bytes:
+
         buf = io.BytesIO()
         manifest = []
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
