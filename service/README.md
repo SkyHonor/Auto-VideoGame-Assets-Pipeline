@@ -177,6 +177,15 @@ docker compose -f docker-compose.demo.yml up --build
 машины без NVIDIA GPU. Полный сценарий (генерация → ревью → скачивание)
 работает точно так же, как в production.
 
+> ⚠️ **Demo и Production нельзя запускать одновременно** — они делят одни и те же
+> порты (5173/8000/9000/9001). Перед сменой режима всегда останавливайте
+> предыдущий: `docker compose down` (prod) или
+> `docker compose -f docker-compose.demo.yml down` (demo). Если после
+> конфликта портов какой-то контейнер поднялся «наполовину» (например,
+> `health` показывает `minio:false`, хотя контейнер запущен), полностью
+> пересоздайте стек: `docker compose down && docker compose up -d` — тома с
+> данными при этом сохраняются.
+
 ### 5.2. Production-режим (реальный GPU-инференс, одна команда)
 
 **Требования к хосту:** NVIDIA GPU + NVIDIA Container Toolkit + свободное место
