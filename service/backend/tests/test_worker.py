@@ -80,7 +80,51 @@ def test_worker_generates_batch_in_mock_mode(monkeypatch):
     assert pkg["cover_image_id"] is not None
 
 
+def test_worker_persists_expanded_prompt(monkeypatch):
+    """When LLM expansion is on, the expanded text must land on every asset so
+    both roles can inspect exactly what the model added."""
+    db = mongomock.MongoClient()["assetforge_worker_llm"]
+    fake = _FakeStorage()
+
+    monkeypatch.setattr(tasks_mod, "_db", lambda: db)
+    monkeypatch.setattr(tasks_mod, "StorageService", lambda: fake)
+    monkeypatch.setattr(settings, "comfyui_mock", True)
+    monkeypatch.setattr(
+        tasks_mod, "LLMExpander", lambda: type(
+            "E", (), {"expand": lambda self, p, w: f"{p}, ultra detailed, {w}"}
+        )()
+    )
+
+    pkg_id = db["packages"].insert_one(
+        {"status": "generating", "image_count": 0, "cover_image_id": None}
+    ).inserted_id
+    job_id = db["jobs"].insert_one(
+        {
+            "package_id": str(pkg_id),
+            "owner_id": "u1",
+            "prompt": "a dragon",
+            "negative_prompt": "",
+            "llm_expand": True,
+            "batch_size": 2,
+            "params": _params(),
+        }
+    ).inserted_id
+
+    tasks_mod.generate_images_task(str(job_id))
+
+    job = db["jobs"].find_one({"_id": job_id})
+    assert job["expanded_prompt"] == "a dragon, ultra detailed, character"
+    imgs = list(db["images"].find({}))
+    assert len(imgs) == 2
+    assert all(
+        i["expanded_prompt"] == "a dragon, ultra detailed, character" for i in imgs
+    )
+    # The original user prompt is preserved alongside the expansion.
+    assert all(i["prompt"] == "a dragon" for i in imgs)
+
+
 def test_worker_missing_job_is_noop(monkeypatch):
+
     db = mongomock.MongoClient()["assetforge_worker_empty"]
     monkeypatch.setattr(tasks_mod, "_db", lambda: db)
     from bson import ObjectId

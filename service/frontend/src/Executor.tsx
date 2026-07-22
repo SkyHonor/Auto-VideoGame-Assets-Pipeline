@@ -716,15 +716,40 @@ export default function Executor() {
                   <dd>{lightbox.expanded_prompt}</dd>
                 </>
               )}
+              <dt>Negative prompt</dt>
+              <dd>{lightbox.negative_prompt || "—"}</dd>
               <dt>Seed</dt>
               <dd>{lightbox.seed}</dd>
               <dt>Size</dt>
               <dd>
                 {lightbox.width}×{lightbox.height}
               </dd>
-              <dt>Workflow</dt>
+              <dt>Workflow / LoRA</dt>
               <dd>{lightbox.workflow_type}</dd>
+              <dt>Sampler</dt>
+              <dd>
+                {lightbox.params?.sampler_name ?? "—"} ·{" "}
+                {lightbox.params?.scheduler ?? "—"}
+              </dd>
+              <dt>Steps / CFG</dt>
+              <dd>
+                {lightbox.params?.steps ?? "—"} steps · CFG{" "}
+                {lightbox.params?.cfg ?? "—"}
+              </dd>
+              <dt>Denoise</dt>
+              <dd>{lightbox.params?.denoise ?? "—"}</dd>
+              <dt>LoRA strength</dt>
+              <dd>{lightbox.params?.style_lora_strength ?? "—"}</dd>
+              <dt>Quality prefix</dt>
+              <dd>{lightbox.params?.positive_prefix ?? "—"}</dd>
+              <dt>File size</dt>
+              <dd>{(lightbox.size_bytes / 1024).toFixed(1)} KB</dd>
+              <dt>Created</dt>
+              <dd>{new Date(lightbox.created_at).toLocaleString()}</dd>
+              <dt>Asset ID</dt>
+              <dd>{lightbox.id}</dd>
             </dl>
+
 
             {!locked && (
               <div className="lightbox-actions">

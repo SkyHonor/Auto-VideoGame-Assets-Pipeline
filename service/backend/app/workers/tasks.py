@@ -58,12 +58,16 @@ def generate_images_task(job_id: str) -> dict:
         )
 
         prompt = job["prompt"]
+        expanded_prompt: str | None = None
         if job.get("llm_expand"):
-            expanded = LLMExpander().expand(prompt, workflow_type)
-            jobs.update_one({"_id": oid}, {"$set": {"expanded_prompt": expanded}})
-            effective_prompt = expanded
+            expanded_prompt = LLMExpander().expand(prompt, workflow_type)
+            jobs.update_one(
+                {"_id": oid}, {"$set": {"expanded_prompt": expanded_prompt}}
+            )
+            effective_prompt = expanded_prompt
         else:
             effective_prompt = prompt
+
 
         storage = StorageService()
         storage.ensure_bucket()
@@ -129,8 +133,11 @@ def generate_images_task(job_id: str) -> dict:
                 "content_type": "image/png",
                 "size_bytes": size,
                 "prompt": prompt,
-                "negative_prompt": job.get("negative_prompt", ""),
-                "expanded_prompt": job.get("expanded_prompt"),
+                "negative_prompt": job.get("negative_prompt")
+                or params.negative_prompt,
+
+                "expanded_prompt": expanded_prompt,
+
                 "seed": seed,
                 "width": params.width,
                 "height": params.height,
