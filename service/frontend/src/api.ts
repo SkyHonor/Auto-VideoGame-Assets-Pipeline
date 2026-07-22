@@ -105,13 +105,17 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   if (!res.ok) {
     let msg = res.statusText;
     try {
-      const j = await res.json();
-      msg = j.detail || msg;
+      const text = await res.text();
+      if (text) msg = (JSON.parse(text).detail as string) || text || msg;
     } catch {}
     throw new Error(msg);
   }
+  // 204 No Content (e.g. DELETE) or an empty body: nothing to parse.
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  if (!text) return undefined as T;
   const ct = res.headers.get("content-type") || "";
-  return (ct.includes("application/json") ? res.json() : (undefined as any)) as T;
+  return (ct.includes("application/json") ? JSON.parse(text) : (text as any)) as T;
 }
 
 export const api = {
