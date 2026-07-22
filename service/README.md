@@ -93,7 +93,7 @@ draft ──generate──▶ (draft) ──submit──▶ pending_review
 | СУБД / ODM      | MongoDB 7 + Beanie (async ODM поверх Motor)                       |
 | Object storage  | MinIO (S3-совместимое), клиент `minio`                            |
 | Очередь / воркеры | Celery + Redis (broker & result backend)                        |
-| Инференс        | ComfyUI (HTTP API), Ollama (расширение промптов LLM)              |
+| Инференс        | **Anima Base (Cosmos2)** через ComfyUI, Ollama (LLM prompt expand) |
 | Тесты           | pytest, mongomock-motor, ASGITransport                            |
 | Упаковка        | Docker, docker-compose (профили `gpu`, `models`)                 |
 
@@ -175,15 +175,31 @@ docker compose up --scale worker=4
 
 ## 7. Реальный GPU-инференс
 
+### Автоматическая загрузка моделей из HuggingFace
+
+Проект настроен на автоматическую загрузку **Anima Base (Cosmos2)** и LoRA из публичных репозиториев `SkyHonor/*`:
+
 ```bash
-# 1) один раз выкачать базовые модели в общий volume
-docker compose --profile models up model-init
+# 1) Скопируйте .env.example в .env (уже настроен на SkyHonor/Anima, Acceleration_Lora, Prototype)
+cp .env.example .env
 
-# 2) положить обученные LoRA в models/lora-store/ (см. его README)
+# 2) Если репозитории приватные, добавьте HF_TOKEN в .env:
+#    HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxx
 
-# 3) в .env выставить COMFYUI_MOCK=false, затем поднять GPU-профиль
+# 3) Загрузите модели один раз (скачает ~6 GB):
+docker compose --profile models up model-init lora-init
+
+# 4) Выключите mock-режим в .env:
+#    COMFYUI_MOCK=false
+
+# 5) Запустите GPU-стек:
 docker compose --profile gpu up --build
 ```
+
+**Что загружается:**
+- **Anima Base** (Cosmos2): `anima-base-v1.0.safetensors` (UNet), `qwen_3_06b_base.safetensors` (Text Encoder), `qwen_image_vae.safetensors` (VAE)
+- **Turbo LoRA**: `anima-turbo-lora-v0.2.safetensors` (ускорение инференса)
+- **Style LoRA**: `SlyToon-Anima-v1.safetensors` (персонажи, триггер `@sltn`), `SpellIcons-Anima-v1.safetensors` (пропсы, триггер `@spll_icn`)
 
 `comfyui` требует NVIDIA GPU (в compose проброшены устройства через
 `deploy.resources`). `ollama` используется, когда исполнитель включает тумблер

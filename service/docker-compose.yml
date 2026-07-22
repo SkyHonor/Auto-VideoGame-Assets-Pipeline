@@ -125,6 +125,13 @@ services:
     volumes:
       - ./models/checkpoints:/models/checkpoints
 
+  lora-init:
+    build: ./models/lora-downloader
+    profiles: ["models"]
+    env_file: .env
+    volumes:
+      - ./models/lora-store:/models/loras
+
 volumes:
   mongo_data:
   minio_data:
