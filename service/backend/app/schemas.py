@@ -45,6 +45,7 @@ class PackageOut(BaseModel):
     status: PackageStatus
     image_count: int = 0
     cover_image_id: str | None = None
+    version: int = 1
     review_comment: str | None = None
     reviewed_by: str | None = None
     created_at: datetime
@@ -82,11 +83,14 @@ class ImageOut(BaseModel):
     job_id: str
     filename: str
     prompt: str
+    negative_prompt: str = ""
     expanded_prompt: str | None = None
     seed: int
     width: int
     height: int
     workflow_type: str
+    size_bytes: int = 0
+    params: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     url: str
 
@@ -103,6 +107,7 @@ class ReviewOut(BaseModel):
     art_director_username: str
     decision: ReviewDecision
     comment: str = ""
+    package_version: int = 1
     created_at: datetime
 
 
@@ -125,6 +130,7 @@ def package_out(p) -> dict:
         "status": p.status,
         "image_count": p.image_count,
         "cover_image_id": p.cover_image_id,
+        "version": getattr(p, "version", 1),
         "review_comment": p.review_comment,
         "reviewed_by": p.reviewed_by,
         "created_at": p.created_at,
@@ -160,11 +166,14 @@ def image_out(img, api_prefix: str = "/api/v1") -> dict:
         "job_id": img.job_id,
         "filename": img.filename,
         "prompt": img.prompt,
+        "negative_prompt": getattr(img, "negative_prompt", ""),
         "expanded_prompt": img.expanded_prompt,
         "seed": img.seed,
         "width": img.width,
         "height": img.height,
         "workflow_type": img.workflow_type,
+        "size_bytes": getattr(img, "size_bytes", 0),
+        "params": getattr(img, "params", {}) or {},
         "created_at": img.created_at,
         "url": f"{api_prefix}/images/{str(img.id)}/file",
     }
@@ -177,5 +186,6 @@ def review_out(r) -> dict:
         "art_director_username": r.art_director_username,
         "decision": r.decision,
         "comment": r.comment,
+        "package_version": getattr(r, "package_version", 1),
         "created_at": r.created_at,
     }

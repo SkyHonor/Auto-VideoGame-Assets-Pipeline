@@ -133,3 +133,125 @@ async def test_reject_flow_allows_resubmit(client, storage):
     # Rejected package can be re-submitted after edits.
     r = await client.post(f"{API}/packages/{pid}/submit", headers=artist)
     assert r.status_code == 200 and r.json()["status"] == "pending_review"
+
+
+async def test_version_increments_and_review_history(client, storage):
+    """A resubmission after a rejection opens a new version and each review is
+    recorded with the version it acted on."""
+    artist = await auth_headers(client, "artist", "artist123")
+    director = await auth_headers(client, "director", "director123")
+    owner_id = (await client.get(f"{API}/auth/me", headers=artist)).json()["id"]
+
+    pid = (
+        await client.post(f"{API}/packages", json={"name": "Set"}, headers=artist)
+    ).json()["id"]
+    await simulate_generation(pid, owner_id, storage, n=1)
+
+    # v1 submitted and rejected.
+    await client.post(f"{API}/packages/{pid}/submit", headers=artist)
+    r = await client.post(
+        f"{API}/packages/{pid}/review",
+        json={"decision": "reject", "comment": "v1 no good"},
+        headers=director,
+    )
+    assert r.json()["version"] == 1
+
+    # Resubmission bumps to v2, then approved.
+    r = await client.post(f"{API}/packages/{pid}/submit", headers=artist)
+    assert r.json()["version"] == 2
+    r = await client.post(
+        f"{API}/packages/{pid}/review",
+        json={"decision": "approve", "comment": "v2 great"},
+        headers=director,
+    )
+    assert r.json()["version"] == 2 and r.json()["status"] == "approved"
+
+    reviews = (await client.get(f"{API}/packages/{pid}/reviews", headers=artist)).json()
+    assert len(reviews) == 2
+    versions = {rv["package_version"]: rv["decision"] for rv in reviews}
+    assert versions == {1: "reject", 2: "approve"}
+
+
+async def test_delete_asset_updates_count(client, storage):
+    artist = await auth_headers(client, "artist", "artist123")
+    owner_id = (await client.get(f"{API}/auth/me", headers=artist)).json()["id"]
+    pid = (
+        await client.post(f"{API}/packages", json={"name": "Del"}, headers=artist)
+    ).json()["id"]
+    await simulate_generation(pid, owner_id, storage, n=3)
+
+    imgs = (await client.get(f"{API}/packages/{pid}/images", headers=artist)).json()
+    target = imgs[0]["id"]
+    r = await client.delete(f"{API}/images/{target}", headers=artist)
+    assert r.status_code == 204
+
+    remaining = (
+        await client.get(f"{API}/packages/{pid}/images", headers=artist)
+    ).json()
+    assert len(remaining) == 2
+    pkg = (await client.get(f"{API}/packages/{pid}", headers=artist)).json()
+    assert pkg["image_count"] == 2
+
+
+async def test_cannot_edit_locked_package(client, storage):
+    """Once a package is pending review, per-asset edits are rejected."""
+    artist = await auth_headers(client, "artist", "artist123")
+    owner_id = (await client.get(f"{API}/auth/me", headers=artist)).json()["id"]
+    pid = (
+        await client.post(f"{API}/packages", json={"name": "Locked"}, headers=artist)
+    ).json()["id"]
+    ids = await simulate_generation(pid, owner_id, storage, n=1)
+    await client.post(f"{API}/packages/{pid}/submit", headers=artist)
+
+    r = await client.delete(f"{API}/images/{ids[0]}", headers=artist)
+    assert r.status_code == 409
+    r = await client.post(f"{API}/images/{ids[0]}/regenerate", headers=artist)
+    assert r.status_code == 409
+
+
+async def test_delete_package_forbidden_while_pending(client, storage):
+    artist = await auth_headers(client, "artist", "artist123")
+    owner_id = (await client.get(f"{API}/auth/me", headers=artist)).json()["id"]
+    pid = (
+        await client.post(f"{API}/packages", json={"name": "Pend"}, headers=artist)
+    ).json()["id"]
+    await simulate_generation(pid, owner_id, storage, n=1)
+    await client.post(f"{API}/packages/{pid}/submit", headers=artist)
+
+    r = await client.delete(f"{API}/packages/{pid}", headers=artist)
+    assert r.status_code == 409
+
+
+async def test_delete_package_removes_everything(client, storage):
+    artist = await auth_headers(client, "artist", "artist123")
+    owner_id = (await client.get(f"{API}/auth/me", headers=artist)).json()["id"]
+    pid = (
+        await client.post(f"{API}/packages", json={"name": "Gone"}, headers=artist)
+    ).json()["id"]
+    await simulate_generation(pid, owner_id, storage, n=2)
+
+    r = await client.delete(f"{API}/packages/{pid}", headers=artist)
+    assert r.status_code == 204
+    assert not storage.data  # bytes purged from object store
+    gone = await client.get(f"{API}/packages/{pid}", headers=artist)
+    assert gone.status_code == 404
+
+
+async def test_regenerate_asset_queues_job(client, storage):
+    artist = await auth_headers(client, "artist", "artist123")
+    owner_id = (await client.get(f"{API}/auth/me", headers=artist)).json()["id"]
+    pid = (
+        await client.post(f"{API}/packages", json={"name": "Reroll"}, headers=artist)
+    ).json()["id"]
+    ids = await simulate_generation(pid, owner_id, storage, n=2)
+
+    r = await client.post(f"{API}/images/{ids[0]}/regenerate", headers=artist)
+    assert r.status_code == 202
+    assert r.json()["batch_size"] == 1
+    # The replaced asset is gone; package drops to a single asset + generating.
+    remaining = (
+        await client.get(f"{API}/packages/{pid}/images", headers=artist)
+    ).json()
+    assert len(remaining) == 1
+    pkg = (await client.get(f"{API}/packages/{pid}", headers=artist)).json()
+    assert pkg["status"] == "generating"

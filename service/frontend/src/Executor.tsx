@@ -6,6 +6,7 @@ import {
   ImageAsset,
   Job,
   Package,
+  Review,
 } from "./api";
 import { AuthedImage, Modal, Spinner, StatusBadge, Toast } from "./components";
 
@@ -28,23 +29,27 @@ const DEFAULT_PARAMS: GenParams = {
   workflow_type: "character",
   width: 1024,
   height: 1024,
-  steps: 30,
-  cfg: 4.5,
-  sampler_name: "dpmpp_2m",
-  scheduler: "karras",
+  steps: 12,
+  cfg: 2.0,
+  sampler_name: "euler",
+  scheduler: "simple",
   denoise: 1.0,
   seed: null,
   style_lora_strength: 0.85,
-  negative_prompt: "low quality, blurry, watermark, text",
+  positive_prefix: "masterpiece, best quality, score_7",
+  negative_prompt:
+    "worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, lowres, censor",
 };
 
 export default function Executor() {
   const [packages, setPackages] = useState<Package[]>([]);
   const [selected, setSelected] = useState<Package | null>(null);
   const [images, setImages] = useState<ImageAsset[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [toast, setToast] = useState<{ m: string; k: "error" | "success" } | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [lightbox, setLightbox] = useState<ImageAsset | null>(null);
+  const [imgBusy, setImgBusy] = useState(false);
 
   const [prompt, setPrompt] = useState("");
   const [batch, setBatch] = useState(4);
@@ -75,7 +80,12 @@ export default function Executor() {
   const openPackage = async (p: Package) => {
     setSelected(p);
     try {
-      setImages(await api.listImages(p.id));
+      const [imgs, revs] = await Promise.all([
+        api.listImages(p.id),
+        api.listReviews(p.id),
+      ]);
+      setImages(imgs);
+      setReviews(revs);
     } catch (e: any) {
       notify(e.message);
     }
@@ -85,8 +95,59 @@ export default function Executor() {
     if (!selected) return;
     const p = await api.getPackage(selected.id);
     setSelected(p);
-    setImages(await api.listImages(p.id));
+    const [imgs, revs] = await Promise.all([
+      api.listImages(p.id),
+      api.listReviews(p.id),
+    ]);
+    setImages(imgs);
+    setReviews(revs);
     setPackages((prev) => prev.map((x) => (x.id === p.id ? p : x)));
+  };
+
+  const deleteAsset = async (img: ImageAsset) => {
+    if (!confirm("Delete this asset from the package?")) return;
+    setImgBusy(true);
+    try {
+      await api.deleteImage(img.id);
+      setLightbox(null);
+      await refreshSelected();
+      notify("Asset deleted", "success");
+    } catch (e: any) {
+      notify(e.message);
+    } finally {
+      setImgBusy(false);
+    }
+  };
+
+  const regenerateAsset = async (img: ImageAsset) => {
+    setImgBusy(true);
+    try {
+      const j = await api.regenerateImage(img.id);
+      setLightbox(null);
+      setJob(j);
+      startPolling(j.id);
+      setSelected((prev) => (prev ? { ...prev, status: "generating" } : prev));
+      notify("Re-rolling this asset…", "success");
+    } catch (e: any) {
+      notify(e.message);
+    } finally {
+      setImgBusy(false);
+    }
+  };
+
+  const deletePackage = async () => {
+    if (!selected) return;
+    if (!confirm(`Delete package "${selected.name}" and all its assets?`)) return;
+    try {
+      await api.deletePackage(selected.id);
+      setSelected(null);
+      setImages([]);
+      setReviews([]);
+      await loadPackages();
+      notify("Package deleted", "success");
+    } catch (e: any) {
+      notify(e.message);
+    }
   };
 
   const createPackage = async (name: string, desc: string) => {
@@ -235,6 +296,11 @@ export default function Executor() {
                     Send for review
                   </button>
                 )}
+                {selected.status !== "pending_review" && (
+                  <button className="btn btn-danger" onClick={deletePackage}>
+                    🗑 Delete package
+                  </button>
+                )}
               </div>
             </div>
 
@@ -249,6 +315,28 @@ export default function Executor() {
               </div>
             )}
 
+            {reviews.length > 0 && (
+              <div className="history">
+                <div className="history-title">
+                  Review history · current version v{selected.version}
+                </div>
+                {reviews.map((r) => (
+                  <div key={r.id} className={`history-item ${r.decision}`}>
+                    <b>
+                      v{r.package_version}{" "}
+                      {r.decision === "approve" ? "Approved" : "Rejected"}
+                    </b>{" "}
+                    by {r.art_director_username}
+                    {r.comment && <span> — {r.comment}</span>}
+                    <span className="muted">
+                      {" "}
+                      · {new Date(r.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {!locked && (
               <div className="card gen-panel">
                 <div className="gen-main">
@@ -259,6 +347,13 @@ export default function Executor() {
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
                       placeholder="e.g. a stylized goblin warrior holding a rusty axe"
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Quality prefix (prepended to prompt)</span>
+                    <input
+                      value={params.positive_prefix}
+                      onChange={(e) => setP({ positive_prefix: e.target.value })}
                     />
                   </label>
                   <label className="field">
@@ -479,6 +574,24 @@ export default function Executor() {
               <dt>Workflow</dt>
               <dd>{lightbox.workflow_type}</dd>
             </dl>
+            {!locked && (
+              <div className="lightbox-actions">
+                <button
+                  className="btn btn-secondary"
+                  disabled={imgBusy}
+                  onClick={() => regenerateAsset(lightbox)}
+                >
+                  ♻ Regenerate
+                </button>
+                <button
+                  className="btn btn-danger"
+                  disabled={imgBusy}
+                  onClick={() => deleteAsset(lightbox)}
+                >
+                  🗑 Delete asset
+                </button>
+              </div>
+            )}
           </div>
         </Modal>
       )}

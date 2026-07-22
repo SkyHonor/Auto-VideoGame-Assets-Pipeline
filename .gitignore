@@ -25,3 +25,9 @@ out.txt
 .DS_Store
 Thumbs.db
 .clineignore
+
+# Heavy presentation / document artifacts (kept out of git)
+*.pptx
+*.docx
+
+

@@ -16,6 +16,9 @@ class Review(Document):
     art_director_username: str
     decision: ReviewDecision
     comment: str = ""
+    # Snapshot of the package version this decision was made against, so the
+    # rejection history reads as "v1 rejected -> v2 rejected -> v3 approved".
+    package_version: int = 1
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:

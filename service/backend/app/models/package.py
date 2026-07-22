@@ -20,6 +20,11 @@ class Package(Document):
     image_count: int = 0
     cover_image_id: str | None = None
 
+    # Versioning: incremented every time the package is (re)submitted for
+    # review. Combined with the immutable Review history this gives a full
+    # audit trail of rejections up to final approval.
+    version: int = 1
+
     # Review outcome (denormalised for quick listing)
     review_comment: str | None = None
     reviewed_by: str | None = None

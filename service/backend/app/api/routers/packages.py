@@ -107,6 +107,10 @@ async def submit_package(package_id: str, user: User = Depends(require_executor)
         package_flow.validate_submit(pkg.status, pkg.image_count)
     except package_flow.FlowError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    # A resubmission after a rejection opens a new review version. The first
+    # submission stays at version 1.
+    if pkg.status == PackageStatus.REJECTED:
+        pkg.version += 1
     pkg.status = PackageStatus.PENDING_REVIEW
     pkg.submitted_at = datetime.now(timezone.utc)
     pkg.review_comment = None
@@ -141,8 +145,33 @@ async def review_package(
         art_director_username=user.username,
         decision=payload.decision,
         comment=payload.comment,
+        package_version=pkg.version,
     ).insert()
     return package_out(pkg)
+
+
+@router.delete("/packages/{package_id}", status_code=204)
+async def delete_package(package_id: str, user: User = Depends(require_executor)):
+    """Delete a whole package: its images (bytes + metadata) and review history.
+
+    Only the owner may delete, and never while it is awaiting review.
+    """
+    pkg = await _get_package_or_404(package_id)
+    _assert_owner(pkg, user)
+    if pkg.status == PackageStatus.PENDING_REVIEW:
+        raise HTTPException(
+            status_code=409,
+            detail="Package is awaiting review; it cannot be deleted right now.",
+        )
+
+    images = await ImageAsset.find(ImageAsset.package_id == package_id).to_list()
+    storage = get_storage()
+    for img in images:
+        await asyncio.to_thread(storage.remove_image, img.object_key)
+        await img.delete()
+    await Review.find(Review.package_id == package_id).delete()
+    await pkg.delete()
+    return None
 
 
 @router.get("/packages/{package_id}/reviews", response_model=list[ReviewOut])

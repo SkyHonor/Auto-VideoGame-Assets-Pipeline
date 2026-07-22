@@ -22,8 +22,6 @@ NODE_LATENT = "64"
 NODE_SAVE = "46"
 NODE_STYLE_LORA = "72"
 
-POSITIVE_PREFIX = "masterpiece, best quality, score_9, score_8, score_7, "
-
 TRIGGERS = {"character": "@sltn", "props": "@spll_icn"}
 TEMPLATES = {"character": "character.json", "props": "props.json"}
 
@@ -52,7 +50,8 @@ def build_workflow(
     wf = copy.deepcopy(_load_template(workflow_type))
 
     trigger = TRIGGERS.get(workflow_type, "")
-    final_prompt = f"{POSITIVE_PREFIX}{prompt}"
+    prefix = (params.positive_prefix or "").strip()
+    final_prompt = f"{prefix}, {prompt}" if prefix else prompt
     if trigger and trigger not in final_prompt:
         final_prompt = f"{final_prompt}, {trigger}"
 

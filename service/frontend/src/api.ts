@@ -26,6 +26,7 @@ export interface Package {
   status: PackageStatus;
   image_count: number;
   cover_image_id: string | null;
+  version: number;
   review_comment: string | null;
   reviewed_by: string | null;
   created_at: string;
@@ -39,11 +40,14 @@ export interface ImageAsset {
   job_id: string;
   filename: string;
   prompt: string;
+  negative_prompt: string;
   expanded_prompt: string | null;
   seed: number;
   width: number;
   height: number;
   workflow_type: string;
+  size_bytes: number;
+  params: Record<string, any>;
   created_at: string;
   url: string;
 }
@@ -71,6 +75,7 @@ export interface GenParams {
   denoise: number;
   seed: number | null;
   style_lora_strength: number;
+  positive_prefix: string;
   negative_prompt: string;
 }
 export interface Review {
@@ -79,6 +84,7 @@ export interface Review {
   art_director_username: string;
   decision: "approve" | "reject";
   comment: string;
+  package_version: number;
   created_at: string;
 }
 
@@ -137,6 +143,11 @@ export const api = {
       body: JSON.stringify({ decision, comment }),
     }),
   listReviews: (id: string) => req<Review[]>(`/packages/${id}/reviews`),
+  deletePackage: (id: string) =>
+    req<void>(`/packages/${id}`, { method: "DELETE" }),
+  deleteImage: (id: string) => req<void>(`/images/${id}`, { method: "DELETE" }),
+  regenerateImage: (id: string) =>
+    req<Job>(`/images/${id}/regenerate`, { method: "POST" }),
   downloadUrl: (id: string) => `${BASE}/packages/${id}/download`,
 };
 

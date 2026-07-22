@@ -178,11 +178,21 @@ export default function Director() {
 
             {reviews.length > 0 && (
               <div className="history">
+                <div className="history-title">
+                  Review history · current version v{selected.version}
+                </div>
                 {reviews.map((r) => (
                   <div key={r.id} className={`history-item ${r.decision}`}>
-                    <b>{r.decision === "approve" ? "Approved" : "Rejected"}</b> by{" "}
-                    {r.art_director_username}
+                    <b>
+                      v{r.package_version}{" "}
+                      {r.decision === "approve" ? "Approved" : "Rejected"}
+                    </b>{" "}
+                    by {r.art_director_username}
                     {r.comment && <span> — {r.comment}</span>}
+                    <span className="muted">
+                      {" "}
+                      · {new Date(r.created_at).toLocaleString()}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -218,16 +228,42 @@ export default function Director() {
               <dd>{lightbox.prompt}</dd>
               {lightbox.expanded_prompt && (
                 <>
-                  <dt>Expanded</dt>
+                  <dt>Expanded (LLM)</dt>
                   <dd>{lightbox.expanded_prompt}</dd>
                 </>
               )}
+              <dt>Negative prompt</dt>
+              <dd>{lightbox.negative_prompt || "—"}</dd>
               <dt>Seed</dt>
               <dd>{lightbox.seed}</dd>
               <dt>Size</dt>
               <dd>
                 {lightbox.width}×{lightbox.height}
               </dd>
+              <dt>Workflow / LoRA</dt>
+              <dd>{lightbox.workflow_type}</dd>
+              <dt>Sampler</dt>
+              <dd>
+                {lightbox.params?.sampler_name ?? "—"} ·{" "}
+                {lightbox.params?.scheduler ?? "—"}
+              </dd>
+              <dt>Steps / CFG</dt>
+              <dd>
+                {lightbox.params?.steps ?? "—"} steps · CFG{" "}
+                {lightbox.params?.cfg ?? "—"}
+              </dd>
+              <dt>Denoise</dt>
+              <dd>{lightbox.params?.denoise ?? "—"}</dd>
+              <dt>LoRA strength</dt>
+              <dd>{lightbox.params?.style_lora_strength ?? "—"}</dd>
+              <dt>Quality prefix</dt>
+              <dd>{lightbox.params?.positive_prefix ?? "—"}</dd>
+              <dt>File size</dt>
+              <dd>{(lightbox.size_bytes / 1024).toFixed(1)} KB</dd>
+              <dt>Created</dt>
+              <dd>{new Date(lightbox.created_at).toLocaleString()}</dd>
+              <dt>Asset ID</dt>
+              <dd>{lightbox.id}</dd>
             </dl>
           </div>
         </Modal>

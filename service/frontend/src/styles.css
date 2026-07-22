@@ -179,6 +179,10 @@ h1, h2, h3 { margin: 0 0 6px; font-weight: 650; letter-spacing: -0.01em; }
 .review-panel { margin-bottom: 18px; }
 .review-actions { display: flex; gap: 10px; justify-content: flex-end; }
 .history { display: grid; gap: 6px; margin-bottom: 18px; }
+.history-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 2px; }
+.lightbox-actions { display: flex; gap: 10px; margin-top: 14px; justify-content: flex-end; }
+.btn-secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+.btn-secondary:hover { border-color: var(--primary); }
 .history-item { font-size: 13px; padding: 8px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--border); }
 .history-item.approve { border-color: rgba(53, 208, 127, 0.4); }
 .history-item.reject { border-color: rgba(255, 92, 122, 0.4); }
