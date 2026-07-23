@@ -49,8 +49,6 @@ docker compose -f docker-compose.demo.yml up --build
 
 ## 🖼️ Скриншоты
 
-> _Плейсхолдеры — как добавить свои скриншоты, см. блок ниже._
-
 | Исполнитель: генерация | Арт-директор: ревью |
 |---|---|
 | ![Executor](docs/assets/screenshot-executor.png) | ![Director](docs/assets/screenshot-director.png) |
