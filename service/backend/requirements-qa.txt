@@ -1,0 +1,16 @@
+# Optional heavy dependencies for the automatic QA gate (services/quality.py).
+#
+# Install these ON THE WORKER only if you want the online ML quality gate
+# (CLIP Score prompt-alignment + LPIPS in-batch diversity). They are kept out
+# of the default requirements.txt because torch pulls in ~2 GB of wheels and is
+# irrelevant to the API process. When these are missing the worker still runs;
+# the gate simply marks every asset as "skipped".
+#
+#   pip install -r requirements-qa.txt
+#
+# For a CPU-only build pin the CPU wheels, e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+torch==2.5.1
+open-clip-torch==2.29.0
+lpips==0.1.4

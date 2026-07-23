@@ -1,0 +1,46 @@
+# --- Web / API ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# --- Data / MongoDB ---
+beanie==1.29.0
+motor==3.6.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# --- Object storage (MinIO / S3) ---
+minio==7.2.13
+
+# --- Async task queue ---
+celery==5.4.0
+redis==5.2.1
+
+# --- Auth / Security ---
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+
+# --- HTTP clients (ComfyUI / Ollama) ---
+httpx==0.28.1
+
+# --- Imaging (mock generation, thumbnails) ---
+pillow==11.0.0
+numpy==2.2.1
+
+# --- Automatic QA gate (CLIP + LPIPS) ---
+# Heavy ML deps live in requirements-qa.txt so the default image stays slim.
+# When absent, services/quality.py degrades gracefully (assets -> "skipped").
+# Install on the worker image only if you want the online quality gate:
+#   pip install -r requirements-qa.txt
+
+
+
+# --- Tests ---
+pytest==8.3.4
+pytest-asyncio==0.25.0
+asgi-lifespan==2.1.0
+mongomock-motor==0.0.34
+mongomock==4.3.0
+
+

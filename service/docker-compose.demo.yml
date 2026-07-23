@@ -1,0 +1,117 @@
+# AssetForge — CPU DEMO stack (runs anywhere, no GPU required).
+#
+# This is a lightweight demonstration profile: the generation worker produces
+# deterministic placeholder images (COMFYUI_MOCK=true) instead of running real
+# GPU inference, so the full product flow — login, generate a batch, submit for
+# review, art-director approve/reject, download — can be shown on ANY machine
+# (laptop, CI, no NVIDIA GPU, no model downloads).
+#
+# For the real GPU inference stack use the default docker-compose.yml instead.
+#
+# Quick start (works out of the box, no GPU, no .env needed):
+#   docker compose -f docker-compose.demo.yml up --build
+#
+#   UI:        http://localhost:5173
+#   API docs:  http://localhost:8000/docs
+#   MinIO UI:  http://localhost:9001  (minioadmin / minioadmin)
+#
+# Demo accounts (seeded automatically on first boot):
+#   executor:     artist   / artist123
+#   art-director: director / director123
+
+name: assetforge-demo
+
+x-demo-env: &demo-env
+  MONGO_URI: mongodb://mongo:27017
+  MONGO_DB: assetforge
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: minioadmin
+  MINIO_SECRET_KEY: minioadmin
+  MINIO_BUCKET: assets
+  MINIO_SECURE: "false"
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/1
+  # The switch that makes it run without a GPU: placeholder images instead of ComfyUI.
+  COMFYUI_MOCK: "true"
+  SEED_DEFAULT_USERS: "true"
+  JWT_SECRET: demo-secret-not-for-production
+  CORS_ORIGINS: "*"
+
+services:
+  mongo:
+    image: mongo:7.0
+    restart: unless-stopped
+    volumes:
+      - demo_mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-08T15-41-24Z
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - demo_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment: *demo-env
+    depends_on:
+      mongo: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # Generation worker in mock mode — no GPU, no ComfyUI. Still horizontally
+  # scalable to demonstrate the pattern: docker compose -f docker-compose.demo.yml up --scale worker=3
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    environment: *demo-env
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=1
+    depends_on:
+      mongo: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  demo_mongo_data:
+  demo_minio_data:
