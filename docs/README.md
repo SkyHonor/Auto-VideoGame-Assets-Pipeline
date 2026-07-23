@@ -12,11 +12,12 @@
 
 | Раздел | Содержимое |
 |--------|------------|
-| **[`business_plan.md`](business_plan.md)** | Бизнес-контекст, сбор и подготовка данных, продуктовые метрики |
-| **[`eda/`](eda/)** | Разведочный анализ датасетов персонажей и пропсов |
+| **[`business_plan/`](business_plan/)** | Бизнес-план, продуктовый прототип и конкурентный бенчмаркинг |
+| **[`eda/`](eda/)** | Разведочный анализ датасетов + описание данных и схем валидации |
 | **[`baseline/`](baseline/)** | Серия из 7 бенчмарков пайплайнов генерации + A/B-тест «NLP vs теги» |
 | **[`mlflow/`](mlflow/)** | `mlruns.db` — база экспериментов MLflow (KID / CLIP / LPIPS) |
 | **[`presentations/`](presentations/)** | Презентации и описание проекта (локально, вне git) |
+
 
 ---
 
@@ -28,10 +29,22 @@
 - **[`eda/eda_props_dataset_analysis.ipynb`](eda/eda_props_dataset_analysis.ipynb)** —
   анализ датасета предметов/иконок: теги-якоря, NLP-описания пространственных связей,
   обоснование гибридной разметки **tags + NLP**.
+- **[`eda/data_and_validation.md`](eda/data_and_validation.md)** — источники и состав
+  данных, брендбуки стилей (`@sltn`, `@spll_icn`), процесс разметки WD-14 и схемы валидации.
 
 Полное описание сбора, синтетического расширения (50 → 2500+ → 1172 эталонных картинки),
 ручной модерации *Human-in-the-loop* и авто-разметки (WD-14 Tagger + LLaVA-7B) —
-в разделе 2 [`business_plan.md`](business_plan.md).
+в [`business_plan/business_plan.md`](business_plan/business_plan.md).
+
+## 1.1. Бизнес-контекст (`business_plan/`)
+
+- **[`business_plan/business_plan.md`](business_plan/business_plan.md)** — бизнес-план:
+  проблема, сбор и подготовка данных, продуктовые метрики.
+- **[`business_plan/product_prototype.md`](business_plan/product_prototype.md)** —
+  ключевая гипотеза, метрики (Acceptance Rate, KID, CLIP), объём MVP.
+- **[`business_plan/product_benchmarking.md`](business_plan/product_benchmarking.md)** —
+  конкурентный анализ (vs Scenario, Stability AI, аутсорс) и модель монетизации.
+
 
 ## 2. Бенчмарки бейзлайнов (`baseline/`)
 
